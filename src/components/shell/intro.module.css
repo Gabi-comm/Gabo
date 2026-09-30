@@ -1,0 +1,36 @@
+.intro {
+  position: fixed; inset: 0; z-index: 100;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+  background: var(--bg); cursor: pointer;
+  transition: opacity 420ms ease;
+}
+.intro[data-phase="leaving"] { opacity: 0; pointer-events: none; }
+:global(html[data-intro="seen"]) .intro { display: none; }
+
+.mascot { animation: pop 560ms cubic-bezier(0.2, 1.5, 0.4, 1) both; transform-origin: 50% 80%; }
+@keyframes pop {
+  0% { transform: scale(0.15) translateY(40px); opacity: 0; }
+  60% { opacity: 1; }
+  100% { transform: scale(1) translateY(0); opacity: 1; }
+}
+
+.word {
+  display: flex; align-items: center; min-height: 64px;
+  font-size: clamp(40px, 9vw, 64px); font-weight: 700; letter-spacing: 0.22em; color: var(--text);
+  padding-left: 0.22em; /* balances the trailing letter-spacing so the word sits centred */
+}
+.caret { display: inline-block; width: 0.5em; height: 0.9em; margin-left: 0.08em; background: var(--blue); animation: blink 0.9s steps(2) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+
+.tagline {
+  margin: 0; color: var(--muted); font-size: clamp(13px, 3.4vw, 16px); letter-spacing: 0.08em;
+  opacity: 0; transform: translateY(6px); transition: opacity 420ms ease, transform 420ms ease;
+}
+.tagline[data-on="true"] { opacity: 1; transform: none; }
+
+.skip { position: absolute; bottom: 24px; color: var(--dim); font-size: 12px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .mascot { animation: none; }
+  .caret { animation: none; }
+}

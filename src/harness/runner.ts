@@ -1,6 +1,6 @@
 import os from "node:os";
 import path from "node:path";
-import type { AgentDefinition, CanUseTool, Options, PermissionResult, Query, SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
+import type { AgentDefinition, CanUseTool, McpServerConfig, Options, PermissionResult, Query, SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import { userContent, type ImageAttachment } from "./images";
 import { AGENTS, type AgentId } from "./agents";
 import { createMapper, type Decision, type Question, type UiEvent } from "./events";
@@ -37,10 +37,12 @@ export interface BuildOptionsInput {
   overrides?: Overrides;
   /** Model, permission mode and effort picked in the status line. */
   prefs?: RunPrefs;
+  /** Extra MCP servers for this run (e.g. gabo-ai: the other AIs from the Plugins page). */
+  mcpServers?: Record<string, McpServerConfig>;
 }
 
 /** Everything a room run passes to query(), minus the live callbacks. */
-export function buildOptions({ room, workspace, spec, sessionId, skillsByAgent = {}, extraWorkflow, overrides = {}, prefs = {} }: BuildOptionsInput): Options {
+export function buildOptions({ room, workspace, spec, sessionId, skillsByAgent = {}, extraWorkflow, overrides = {}, prefs = {}, mcpServers }: BuildOptionsInput): Options {
   const agents: Record<string, AgentDefinition> = {};
   for (const id of rosterFor(room)) {
     agents[id] = {
@@ -62,6 +64,7 @@ export function buildOptions({ room, workspace, spec, sessionId, skillsByAgent =
     agentProgressSummaries: true,
     // settingSources omitted = everything the CLI loads: user, project and local settings, CLAUDE.md, plugins, MCP.
     permissionMode: prefs.mode ?? "default",
+    ...(mcpServers && Object.keys(mcpServers).length ? { mcpServers } : {}),
     ...(prefs.model ? { model: prefs.model } : {}),
     ...(prefs.effort ? { effort: prefs.effort } : {}),
     systemPrompt: {
@@ -135,6 +138,9 @@ export interface RunInput {
   prefs?: RunPrefs;
   /** Images pasted into the message. */
   images?: ImageAttachment[];
+  /** Extra MCP servers and a note about them for the lead (Plugins page AIs). */
+  mcpServers?: Record<string, McpServerConfig>;
+  systemNote?: string;
   emit: (e: UiEvent) => void;
   signal: AbortSignal;
   /** Test seam; defaults to the Agent SDK's query(). */
@@ -150,7 +156,7 @@ export function preToolUseReason(tool: string, toolInput: Record<string, unknown
 const LOGIN_HINT = "Open a terminal, run `claude`, then `/login` with your Pro/Max account.";
 
 export async function runRoom(input: RunInput): Promise<void> {
-  const { runId, conversationId, room, prompt, workspace, sessionId, skillsByAgent, fullArena = false, prefs, images = [], emit, signal } = input;
+  const { runId, conversationId, room, prompt, workspace, sessionId, skillsByAgent, fullArena = false, prefs, images = [], mcpServers, systemNote, emit, signal } = input;
   // Esc can land while setup awaits (skill scout, SDK import, Python check); an abort before the
   // listener below is attached would otherwise be missed and the run would go on unseen.
   const stopped = () => {
@@ -194,7 +200,7 @@ export async function runRoom(input: RunInput): Promise<void> {
     });
 
   const options: Options = {
-    ...buildOptions({ room, workspace, spec, sessionId, skillsByAgent, extraWorkflow, overrides: loadOverrides(), prefs }),
+    ...buildOptions({ room, workspace, spec, sessionId, skillsByAgent, extraWorkflow: [extraWorkflow, systemNote].filter(Boolean).join("\n") || undefined, overrides: loadOverrides(), prefs, mcpServers }),
     abortController,
     canUseTool: makeCanUseTool({ runId, workspace, broker: defaultBroker, sessionRules, onAsk }),
     hooks: {

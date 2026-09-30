@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { JetBrains_Mono } from "next/font/google";
 import { Shell } from "@/components/shell/Shell";
+import { introSeenScript } from "@/components/shell/introScript";
 import "./globals.css";
 import "@/components/mascot/mascot.css";
 
@@ -15,7 +16,10 @@ export const viewport: Viewport = { themeColor: "#141413", width: "device-width"
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={mono.variable}>
+    <html lang="en" className={mono.variable} suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: introSeenScript }} />
+      </head>
       <body>
         <Shell>{children}</Shell>
       </body>

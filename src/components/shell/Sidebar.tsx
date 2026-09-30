@@ -17,18 +17,43 @@ export const SESSIONS_CHANGED = "gabo:sessions-changed";
 
 export { roomHref };
 
-const NAV: { room: "home" | "library" | "arena" | "hackathon"; icon: IconName }[] = [
-  { room: "home", icon: "home" },
+const WORKSPACE: { room: "library" | "arena" | "hackathon"; icon: IconName }[] = [
   { room: "library", icon: "library" },
   { room: "arena", icon: "arena" },
   { room: "hackathon", icon: "hackathon" },
 ];
+const WORKSPACE_PATHS = WORKSPACE.map((w) => `/${w.room}`);
+const HISTORY_OPEN_KEY = "gabo:history-open";
+const WORKSPACE_OPEN_KEY = "gabo:workspace-open";
 
 export function Sidebar({ onClose }: { onClose: () => void }) {
   const pathname = usePathname();
   const [agentsOpen, setAgentsOpen] = useState(pathname.startsWith("/agents"));
   const [recents, setRecents] = useState<Recent[] | null>(null);
   const [recentsError, setRecentsError] = useState(false);
+  const inWorkspace = WORKSPACE_PATHS.includes(pathname);
+  const [workspaceOpen, setWorkspaceOpen] = useState(inWorkspace);
+  const [historyOpen, setHistoryOpen] = useState(false);
+
+  useEffect(() => { if (inWorkspace) setWorkspaceOpen(true); }, [inWorkspace]);
+  useEffect(() => {
+    try {
+      setHistoryOpen(localStorage.getItem(HISTORY_OPEN_KEY) === "1");
+      if (localStorage.getItem(WORKSPACE_OPEN_KEY) === "1") setWorkspaceOpen(true);
+    } catch { /* storage blocked */ }
+  }, []);
+  function toggleWorkspace() {
+    setWorkspaceOpen((open) => {
+      try { localStorage.setItem(WORKSPACE_OPEN_KEY, open ? "0" : "1"); } catch { /* storage blocked */ }
+      return !open;
+    });
+  }
+  function toggleHistory() {
+    setHistoryOpen((open) => {
+      try { localStorage.setItem(HISTORY_OPEN_KEY, open ? "0" : "1"); } catch { /* storage blocked */ }
+      return !open;
+    });
+  }
 
   const load = useCallback(async () => {
     try {
@@ -66,6 +91,7 @@ export function Sidebar({ onClose }: { onClose: () => void }) {
         <Icon name="plus" /> New
       </Link>
 
+      <div className={styles.scrollArea}>
       <ul className={styles.nav}>
         <li>
           <Link href="/" className={styles.navItem} aria-current={pathname === "/" ? "page" : undefined}>
@@ -101,17 +127,47 @@ export function Sidebar({ onClose }: { onClose: () => void }) {
             </ul>
           )}
         </li>
-        {NAV.slice(1).map(({ room, icon }) => (
-          <li key={room}>
-            <Link href={`/${room}`} className={styles.navItem} aria-current={pathname === `/${room}` ? "page" : undefined}>
-              <Icon name={icon} /> {ROOMS[room].label}
-            </Link>
-          </li>
-        ))}
+        <li>
+          <button
+            className={`${styles.navItem} ${styles.groupButton}`}
+            onClick={toggleWorkspace}
+            aria-expanded={workspaceOpen}
+            aria-controls="workspace-subtabs"
+          >
+            <Icon name="workspace" /> Workspace
+            <span className={styles.groupChevron} data-open={workspaceOpen}><Icon name="chevron" size={14} /></span>
+          </button>
+          {workspaceOpen && (
+            <ul id="workspace-subtabs" className={styles.subnav}>
+              {WORKSPACE.map(({ room, icon }) => (
+                <li key={room}>
+                  <Link href={`/${room}`} className={styles.subItem} aria-current={pathname === `/${room}` ? "page" : undefined}>
+                    <Icon name={icon} /> {ROOMS[room].label}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </li>
+        <li>
+          <Link href="/plugins" className={styles.navItem} aria-current={pathname === "/plugins" ? "page" : undefined}>
+            <Icon name="plugins" /> Plugins
+          </Link>
+        </li>
       </ul>
 
-      <div className={styles.recentsHead}>Recents <span className={styles.recentsSub}>· Claude Code history</span></div>
-      <ul className={styles.recents}>
+      <button
+        className={styles.historyToggle}
+        onClick={toggleHistory}
+        aria-expanded={historyOpen}
+        aria-controls="history-list"
+        title="Claude Code history: CLI and app sessions, all projects"
+      >
+        <span className={styles.groupChevron} data-open={historyOpen}><Icon name="chevron" size={12} /></span>
+        History
+        {recents && <span className={styles.recentsSub}>{recents.length}</span>}
+      </button>
+      <ul className={styles.recents} id="history-list" hidden={!historyOpen}>
         {recentsError && <li className={styles.recentsEmpty}>Couldn&apos;t load chats. <button className={styles.linkButton} onClick={load}>Retry</button></li>}
         {!recentsError && recents === null && <li className={styles.recentsEmpty}>Loading…</li>}
         {!recentsError && recents?.length === 0 && <li className={styles.recentsEmpty}>No chats yet.</li>}
@@ -124,6 +180,7 @@ export function Sidebar({ onClose }: { onClose: () => void }) {
           </li>
         ))}
       </ul>
+      </div>
       <div className={styles.footer}>
         <Link href="/settings" className={styles.navItem} aria-current={pathname === "/settings" ? "page" : undefined}>
           <Icon name="settings" /> Settings

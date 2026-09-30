@@ -2,6 +2,11 @@ import { expect, test } from "@playwright/test";
 
 const prompt = (page: import("@playwright/test").Page) => page.locator("#prompt-input");
 
+// The intro animation plays once per browser session; skip it except in the test about it.
+test.beforeEach(async ({ page }, info) => {
+  if (!info.title.includes("intro")) await page.addInitScript(() => sessionStorage.setItem("gabo:intro-seen", "1"));
+});
+
 test("home shows the office scene above the input, no greeting", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("img", { name: /walks into the office/ })).toBeVisible();
@@ -219,6 +224,7 @@ test("settings: edit an agent's prompt and goal, it persists, and reset restores
 
 test("Recents lists Claude Code history; opening a CLI session shows its transcript and resumes it", async ({ page }) => {
   await page.goto("/");
+  await page.getByRole("button", { name: /^History/ }).click();
   const entry = page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: /Fix login bug/ });
   await expect(entry).toContainText("Rivan-Simulation");
   await entry.click();
@@ -380,4 +386,74 @@ test("Up and Down recall previous prompts like a terminal", async ({ page }) => 
   await expect(input).toHaveValue("second prompt");
   await page.keyboard.press("ArrowDown");
   await expect(input).toHaveValue("draft");
+});
+
+test("sidebar: Workspace groups the rooms, History is a dropdown that remembers its state, Plugins has a tab", async ({ page }) => {
+  await page.goto("/");
+  const nav = page.getByRole("navigation", { name: "Main" });
+  const workspace = nav.getByRole("button", { name: /^Workspace/ });
+  await expect(workspace).toHaveAttribute("aria-expanded", "false");
+  await expect(nav.getByRole("link", { name: "Library", exact: true })).toBeHidden();
+  await workspace.click();
+  for (const room of ["Library", "Arena", "Hackathon"]) await expect(nav.getByRole("link", { name: room, exact: true })).toBeVisible();
+  await expect(nav.getByRole("link", { name: "Plugins" })).toBeVisible();
+
+  const history = nav.getByRole("button", { name: /^History/ });
+  await expect(history).toHaveAttribute("aria-expanded", "false");
+  await expect(nav.getByRole("link", { name: /Fix login bug/ })).toBeHidden();
+  await history.click();
+  await expect(nav.getByRole("link", { name: /Fix login bug/ })).toBeVisible();
+  await page.reload();
+  await expect(nav.getByRole("link", { name: /Fix login bug/ })).toBeVisible();
+
+  await nav.getByRole("link", { name: "Arena", exact: true }).click();
+  await expect(page).toHaveURL(/\/arena$/);
+  await expect(nav.getByRole("button", { name: /^Workspace/ })).toHaveAttribute("aria-expanded", "true");
+});
+
+test("intro: Gabo pops in, GABO types out with the tagline, then the app shows; only once per session", async ({ page }) => {
+  await page.goto("/");
+  const intro = page.getByRole("status", { name: "Gabo intro" });
+  await expect(intro).toBeVisible();
+  await expect(intro.getByRole("img", { name: "Gabo mascot" })).toBeVisible();
+  await expect(intro.getByText("GABO", { exact: true })).toBeVisible({ timeout: 3000 });
+  await expect(intro.getByText("A Multi-Agent Harness")).toBeVisible({ timeout: 3000 });
+  await expect(intro).toBeHidden({ timeout: 6000 });
+  await expect(page.locator("#prompt-input")).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole("status", { name: "Gabo intro" })).toHaveCount(0);
+});
+
+test("intro can be skipped with a click or a key", async ({ page }) => {
+  await page.goto("/library");
+  const intro = page.getByRole("status", { name: "Gabo intro" });
+  await expect(intro).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(intro).toBeHidden();
+});
+
+test("Plugins: connect ChatGPT with a key (never shown back), test it, and see Claude Code plugins", async ({ page }) => {
+  await page.goto("/plugins");
+  await expect(page.getByRole("heading", { name: "Plugins", exact: true })).toBeVisible();
+  const card = page.getByRole("region", { name: "ChatGPT" });
+  await expect(card.getByRole("checkbox", { name: "Enable ChatGPT" })).not.toBeChecked();
+  await card.getByRole("checkbox", { name: "Enable ChatGPT" }).check();
+  await card.getByLabel("API key").fill("sk-test-abcd1234");
+  await card.getByLabel("Model").fill("gpt-5");
+  await card.getByRole("button", { name: "Save" }).click();
+  await expect(card.getByText("Saved")).toBeVisible();
+  await expect(card.getByText("Key saved: ••••1234")).toBeVisible();
+  await expect(card.getByLabel("API key")).toHaveValue("");
+  await card.getByRole("button", { name: "Test connection" }).click();
+  await expect(card.getByText("OK (fake ChatGPT)")).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole("region", { name: "ChatGPT" }).getByRole("checkbox", { name: "Enable ChatGPT" })).toBeChecked();
+  const html = await page.content();
+  expect(html).not.toContain("sk-test-abcd1234");
+  await expect(page.getByRole("region", { name: "Claude Code plugins" })).toContainText("superpowers");
+
+  const openclaw = page.getByRole("region", { name: "OpenClaw" });
+  await openclaw.getByLabel("Base URL").fill("http://evil.example/v1");
+  await openclaw.getByRole("button", { name: "Save" }).click();
+  await expect(openclaw.getByRole("alert")).toContainText("https");
 });

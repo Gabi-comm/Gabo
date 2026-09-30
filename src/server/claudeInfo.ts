@@ -11,6 +11,8 @@ export interface ClaudeInfo {
   outputStyle: string;
   /** permissions.defaultMode from ~/.claude/settings.json, so the app starts where the CLI does. */
   defaultMode: string;
+  /** Enabled Claude Code plugins from ~/.claude/settings.json (name@marketplace). */
+  plugins: { id: string; name: string; marketplace: string }[];
 }
 
 const TTL_MS = 5 * 60_000;
@@ -31,15 +33,31 @@ const FAKE_INFO: ClaudeInfo = {
   account: { subscriptionType: "Claude Pro" },
   outputStyle: "default",
   defaultMode: "default",
+  plugins: [
+    { id: "superpowers@claude-plugins-official", name: "superpowers", marketplace: "claude-plugins-official" },
+    { id: "github@claude-plugins-official", name: "github", marketplace: "claude-plugins-official" },
+  ],
 };
 
-function userDefaultMode(): string {
+function userSettings(): Record<string, unknown> {
   try {
-    const settings = JSON.parse(fs.readFileSync(path.join(os.homedir(), ".claude", "settings.json"), "utf8"));
-    return typeof settings?.permissions?.defaultMode === "string" ? settings.permissions.defaultMode : "default";
+    return JSON.parse(fs.readFileSync(path.join(os.homedir(), ".claude", "settings.json"), "utf8"));
   } catch {
-    return "default";
+    return {};
   }
+}
+
+function userDefaultMode(): string {
+  const mode = (userSettings().permissions as { defaultMode?: unknown } | undefined)?.defaultMode;
+  return typeof mode === "string" ? mode : "default";
+}
+
+function enabledPlugins(): ClaudeInfo["plugins"] {
+  const map = (userSettings().enabledPlugins ?? {}) as Record<string, unknown>;
+  return Object.entries(map)
+    .filter(([, on]) => on === true)
+    .map(([id]) => ({ id, name: id.split("@")[0], marketplace: id.split("@")[1] ?? "" }))
+    .sort((a, b) => a.name.localeCompare(b.name));
 }
 
 /**
@@ -65,6 +83,7 @@ async function read(): Promise<ClaudeInfo> {
       account: { email: init.account?.email, subscriptionType: init.account?.subscriptionType },
       outputStyle: init.output_style,
       defaultMode: userDefaultMode(),
+      plugins: enabledPlugins(),
     };
   } finally {
     q.close();

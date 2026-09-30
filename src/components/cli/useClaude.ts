@@ -10,6 +10,7 @@ export interface ClaudeInfo {
   account: { email?: string; subscriptionType?: string };
   outputStyle: string;
   defaultMode: string;
+  plugins?: { id: string; name: string; marketplace: string }[];
 }
 
 let infoPromise: Promise<ClaudeInfo | null> | null = null;

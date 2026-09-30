@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import { Sidebar } from "./Sidebar";
 import { Icon } from "./Icon";
+import { IntroSplash } from "./IntroSplash";
 import styles from "./shell.module.css";
 
 const COLLAPSED_KEY = "gabo:sidebar-collapsed";
@@ -51,6 +52,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
       <div className={styles.scrim} onClick={() => setOpen(false)} aria-hidden="true" />
       <Sidebar onClose={hide} />
       <main className={styles.main}>{children}</main>
+      <IntroSplash />
     </div>
   );
 }

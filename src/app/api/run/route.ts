@@ -6,6 +6,9 @@ import type { UiEvent } from "@/harness/events";
 import { rejectForeign } from "@/server/guard";
 import { parseRunPrefs } from "@/harness/controls";
 import { checkImages, type ImageAttachment } from "@/harness/images";
+import { usableProviders } from "@/harness/providers";
+import { AI_SERVER, aiSystemNote, buildAiServer } from "@/harness/aiTools";
+import { loadProviders } from "@/server/providers";
 import { FAKE, getWorkspace, sessions, validateWorkspace } from "@/server/config";
 import { prepareSkills } from "@/server/skills";
 
@@ -69,10 +72,13 @@ export async function POST(req: Request) {
           // A Claude Code session opened from history keeps running in its own project folder.
           const own = record.cwd ? validateWorkspace(record.cwd) : null;
           const workspace = own?.ok ? own.path : getWorkspace();
+          // Other AIs from the Plugins page, as tools Claude can call (each call still asks Gab).
+          const ais = usableProviders(loadProviders());
           const skillsByAgent = await prepareSkills({ conversationId, room, prompt, workspace, firstTurn: !existing?.sdkSessionId, emit, signal: abort.signal });
           await runRoom({
             runId, conversationId, room, prompt, workspace, emit, signal: abort.signal,
             sessionId: record.sdkSessionId, skillsByAgent, fullArena: body.full === true, prefs: parseRunPrefs(body.prefs), images,
+            ...(ais.length ? { mcpServers: { [AI_SERVER]: buildAiServer(ais) }, systemNote: aiSystemNote(ais) } : {}),
           });
         }
       } catch (err) {

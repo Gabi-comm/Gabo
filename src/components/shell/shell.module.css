@@ -58,7 +58,7 @@
 .linkButton { background: none; border: 0; color: var(--blue-text); padding: 0; text-decoration: underline; }
 
 
-.footer { position: sticky; bottom: 0; background: var(--bg); border-top: 1px solid var(--line); padding: 8px 0; margin-top: 8px; }
+.footer { flex: none; background: var(--bg); border-top: 1px solid var(--line); padding: 8px 0; margin-top: 8px; }
 
 .scrim { display: none; }
 
@@ -81,3 +81,20 @@
   .menuButton { display: grid; place-items: center; position: fixed; top: 8px; left: 8px; z-index: 10; background: var(--bg); }
   .closeButton { display: grid; place-items: center; }
 }
+
+/* Workspace group and History dropdown */
+.groupButton { width: 100%; background: none; border: 0; text-align: left; font: inherit; }
+.groupChevron { margin-left: auto; display: grid; place-items: center; color: var(--muted); }
+.groupChevron svg { transition: transform 150ms ease; }
+.groupChevron[data-open="true"] svg { transform: rotate(90deg); }
+.historyToggle {
+  display: flex; align-items: center; gap: 6px; width: 100%; margin-top: 14px;
+  background: none; border: 0; border-radius: 8px; padding: 6px 10px; color: var(--muted); font-size: 12px; text-align: left;
+}
+.historyToggle:hover { background: var(--surface); color: var(--text); }
+.historyToggle .groupChevron { margin-left: 0; }
+.recents[hidden] { display: none; }
+
+/* Nav + history scroll on their own; brand, New and Settings stay put. */
+.sidebar { overflow: hidden; }
+.scrollArea { flex: 1; min-height: 0; overflow-y: auto; margin: 0 -10px; padding: 0 10px; }
