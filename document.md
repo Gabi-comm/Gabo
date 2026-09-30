@@ -12,13 +12,16 @@ Start it with `npm run dev`, then open http://127.0.0.1:3217. It only answers on
 | --- | --- |
 | **New** | Starts a fresh chat in the room you're in. During a run it stops that run first. |
 | **Home** `/` | A normal Claude Code session. The office scene (Gabo walks in and sits at the desk) sits above the input until you send something. The Caveman is on call for short answers. |
-| **Agents** `/agents` | All twelve agents, each with its role and the rooms it works in. Every mascot loops its role animation. The sub-tabs open a solo chat with one agent (plus the Caveman). |
+| **Agents** `/agents` | The twelve agents, each on its own themed background (sunrise hill, rainy street, courtroom, code room, cave with a campfire…), plus **your agents**. Click one for a solo chat with it (plus the Caveman). |
 | **Workspace ▸ Library** `/library` | Studying and research: Researcher, Tutor, Planner, Caveman. The top-left scene shows the agents at a library table. |
 | **Workspace ▸ Arena** `/arena` | Brainstorming and picking the best idea: Emperor (runs the idea-arena with the Idea Rubric), Believer, Skeptic, Investor, Judge, Caveman. The agents spar in an arena. |
 | **Workspace ▸ Hackathon** `/hackathon` | Building and shipping: Planner, Designer, Coder, Tester, Investor, Caveman. The agents type at desks. |
+| **Workspace ▸ Laboratory** `/laboratory` | **You pick the team.** Tick the agents (built-in and your own) to include; the Caveman is always in. Their mascots load above the prompt box, and the chat runs with exactly that team. "Change team" before the first message; **New** starts over. |
+| **Status** `/status` | Claude Code's version (the one Gabo uses and the CLI on your PATH), the Agent SDK version, default model, models, permission mode, your account and plan, connectivity (Claude Code login, the Anthropic API, Anthropic's status page), every MCP server with its status, your plugins, other AIs, the workspace, and Python for the Arena. **Refresh** re-checks. |
 | **Plugins** `/plugins` | Connect other AIs (ChatGPT, Gemini, OpenClaw, Hermes, or any OpenAI-compatible server) so Claude can consult them. Also lists your Claude Code plugins and MCP servers with their status. |
 | **History** (dropdown) | Your whole Claude Code history, CLI and app sessions from every project, newest first, labelled by folder. It remembers whether it's open. |
-| **Settings** `/settings` | Edit each agent's role prompt and add a goal. Saved to `config/agent-overrides.json`; the text in `docs/spec.md` stays the default, so "Reset to spec" can restore it. |
+| **Settings → Agents** `/settings` | Edit each built-in agent's role prompt and add a goal. Saved to `config/agent-overrides.json`; the text in `docs/spec.md` stays the default, so "Reset to spec" can restore it. |
+| **Settings → Add agent** `/settings?tab=new` | Make your own agent: name, one-liner, **mascot** (describe it and press **Generate mascot**, press **Randomize costume**, or pick each part: body colour, hat, face, holding, clothes, back), **system prompt**, **goal**, and **background** (pick one, or **Generate background** from the prompt and goal). A live preview shows it on its stage. Saved to `config/custom-agents.json`. Edit or delete it later from the same tab. |
 
 The **sidebar** hides with the sidebar button or **Ctrl+B** and remembers that. On a phone it's a slide-out drawer.
 
@@ -159,12 +162,20 @@ Plain `http://` is only allowed to this machine, so keys never cross the network
 
 ---
 
+## Your agents
+
+- Made in **Settings → Add agent**. Each gets an id like `x-data-wizard`.
+- They work in the **Laboratory** (tick them into the team) and on their own page (`/agents/x-…`). The built-in rooms keep their fixed teams.
+- **Generate mascot** and **Generate background** use one quick Haiku call on your plan (not saved to your history). If Claude can't be reached, they match your words instead and say so.
+- The mascot borrows the hover animation of the built-in agent holding a similar item (a gavel swings like the Judge's, a sword like the Caveman's club).
+
 ## Files you might edit
 
 | File | What |
 | --- | --- |
 | `docs/spec.md` | The original request, verbatim. Agent role prompts are read from here. |
 | `config/agent-overrides.json` | Your prompt and goal edits from Settings. Tracked in git. |
+| `config/custom-agents.json` | The agents you made (prompt, goal, costume, background). Tracked in git. |
 | `.data/` | Chats, the workspace setting, provider keys, the skills cache. Local only, git-ignored. |
 | `vendor/idea-arena/` | The arena skill (Jakeschincariol/arena-skill, pinned). |
 
