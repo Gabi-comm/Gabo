@@ -13,13 +13,26 @@ export interface RoomMeta {
   placeholder: string;
 }
 
+/**
+ * Shared by every room (docs/token-budget.md): decide how much help the task needs before pulling agents,
+ * pass short structured hand-offs, and finish with a Caveman-style recap written by the lead itself.
+ * The Caveman agent stays in every room, but is only called when Gab asks for it.
+ */
+const TRIAGE =
+  "Triage first: answer directly when the task is simple; call one agent when one view is enough; pull the team only when the task needs several viewpoints. Never call an agent just to restate what another said. Give each agent a short brief (the question, key facts, file paths or quotes it needs), not the whole conversation, and pass its structured output on instead of re-deriving it.";
+const RECAP =
+  "Finish with a short recap in Caveman style, written by you: answer first, no greeting or filler, keep every number, file name and warning. Call the caveman agent only when Gab asks for it by name.";
+
 export const ROOMS: Record<BaseRoomId, RoomMeta> = {
   home: {
     id: "home",
     label: "Home",
     roster: ["caveman"],
-    workflow:
-      "You are a normal Claude Code session. The Caveman agent is available: hand it the final answer to compress when the user asks for brevity or when your reply would run long.",
+    workflow: [
+      "You are a normal Claude Code session.",
+      "Triage first: most tasks need no agent at all. The caveman agent is available if Gab asks for it.",
+      "When your reply would run long, close with a Caveman style recap you write yourself (answer first, no filler, keep numbers, file names and warnings).",
+    ].join(" "),
     placeholder: "How can I help you today?",
   },
   library: {
@@ -28,9 +41,11 @@ export const ROOMS: Record<BaseRoomId, RoomMeta> = {
     roster: ["researcher", "tutor", "planner", "caveman"],
     workflow: [
       "You lead the Library: studying, researching and understanding things.",
-      "Pull only the agents the ask needs. Typical flow: the Tutor first asks what is being studied, the time available and the deadline (unless already given);",
-      "the Researcher learns the topic from strong sources and cites them; the Tutor turns it into a study plan and practice questions with hidden answers;",
-      "the Planner joins only when the goal is big and needs steps. The Caveman always writes the final recap the user reads.",
+      TRIAGE,
+      "Typical flow when a team is needed: the Tutor first asks what is being studied, the time available and the deadline (unless already given);",
+      "the Researcher learns the topic from strong sources and cites them; the Tutor turns the Researcher's summary into a study plan and practice questions with hidden answers;",
+      "the Planner joins only when the goal is big and needs steps. A quick factual question needs only the Researcher, or no agent.",
+      RECAP,
     ].join(" "),
     placeholder: "What are you learning?",
   },
@@ -40,9 +55,11 @@ export const ROOMS: Record<BaseRoomId, RoomMeta> = {
     roster: ["emperor", "believer", "skeptic", "investor", "judge", "caveman"],
     workflow: [
       "You lead the Arena: brainstorming and picking the best idea.",
-      "The Emperor sharpens the challenge into one clear question, then runs the idea-arena skill with the Idea Rubric (--quick, 16 agents, unless the user confirmed a full run).",
-      "The crowned idea then goes to the Believer, then the Skeptic (who reads the Believer's case), then the Investor, and the Judge rules last after hearing all three.",
-      "The Caveman always writes the final recap: crowned idea, verdict, biggest risk, the 10 minute test.",
+      TRIAGE,
+      "Run the idea-arena only when Gab wants ideas generated or compared: the Emperor sharpens the challenge into one clear question, then runs the idea-arena skill with the Idea Rubric using --agents 8 (16 with --quick only if Gab asks for more, 100 only when he confirmed a full run).",
+      "When Gab brings his own idea to judge, skip the tournament.",
+      "Give the crowned (or Gab's) idea to the Believer, Skeptic and Investor as a five-line brief; the Skeptic also gets the Believer's case. The Judge rules last from their three outputs.",
+      RECAP.replace("recap in Caveman style", "recap in Caveman style (crowned idea, verdict, biggest risk, the 10 minute test)"),
     ].join(" "),
     placeholder: "What problem needs an idea?",
   },
@@ -52,9 +69,11 @@ export const ROOMS: Record<BaseRoomId, RoomMeta> = {
     roster: ["planner", "designer", "coder", "tester", "investor", "caveman"],
     workflow: [
       "You lead the Hackathon: building and shipping marketable software fast in the current workspace.",
-      "The Planner defines done and the steps; the Designer sets the direction before UI is built; the Coder builds the smallest end-to-end version;",
-      "the Tester tries to break it, and if it fails the Coder fixes once and the Tester re-checks; the Investor checks who would pay.",
-      "The Caveman always writes the final recap: what shipped, how to run it, what still needs attention.",
+      TRIAGE,
+      "For a real build: the Planner defines done and the steps; the Designer sets the direction before UI is built; the Coder builds the smallest end-to-end version;",
+      "the Tester tries to break it, and if it fails the Coder fixes once and the Tester re-checks; the Investor checks who would pay only when the product is meant to sell.",
+      "A small change goes straight to the Coder (and the Tester if it's risky). Read files once and hand agents the paths and excerpts they need.",
+      RECAP.replace("recap in Caveman style", "recap in Caveman style (what shipped, how to run it, what still needs attention)"),
     ].join(" "),
     placeholder: "What are we shipping?",
   },
@@ -98,7 +117,7 @@ export function workflowFor(room: RoomId, team?: readonly string[]): string {
     return `You are a solo session with the ${id} agent. Delegate the user's task to the ${id} agent and show its output in full. The Caveman is available for a short recap if asked.`;
   }
   if (room === "laboratory") {
-    return `${ROOMS.laboratory.workflow} Team (subagent ids): ${labTeam(team).join(", ")}. Pull the members the task needs, in a sensible order, and let them build on each other's work. The Caveman writes the final recap.`;
+    return `${ROOMS.laboratory.workflow} Team (subagent ids): ${labTeam(team).join(", ")}. ${TRIAGE} Use the members the task needs, in a sensible order, and let them build on each other's outputs. ${RECAP}`;
   }
   return ROOMS[room as BaseRoomId].workflow;
 }

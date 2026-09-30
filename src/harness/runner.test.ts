@@ -14,7 +14,7 @@ describe("buildOptions", () => {
     expect(Object.keys(opts.agents!).sort()).toEqual(["believer", "caveman", "emperor", "investor", "judge", "skeptic"]);
     expect(opts.agents!.skeptic.prompt).toContain(spec.agents.skeptic);
     expect(opts.agents!.emperor.prompt).toContain(spec.ideaRubric);
-    for (const def of Object.values(opts.agents!)) expect(def.prompt).toContain(spec.skillScout);
+    for (const def of Object.values(opts.agents!)) expect(def.prompt).toContain("Output budget: at most");
   });
 
   it("runs in the workspace on the subscription, with skills and streaming on", () => {
@@ -27,7 +27,8 @@ describe("buildOptions", () => {
     expect(opts.settingSources).toBeUndefined();
     expect(opts.permissionMode).toBe("default");
     expect(opts.env?.ANTHROPIC_API_KEY).toBeUndefined();
-    expect(opts.agents!.caveman.skills).toEqual(["unslop"]);
+    expect(opts.agents!.caveman.skills).toBeUndefined();
+    expect(opts.agents!.caveman.prompt).toContain("Skills picked for you: unslop");
     expect(opts.systemPrompt).toMatchObject({ type: "preset", preset: "claude_code" });
   });
 });

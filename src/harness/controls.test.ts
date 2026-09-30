@@ -29,10 +29,10 @@ describe("run preferences", () => {
     expect(opts.permissionMode).toBe("plan");
     expect(opts.effort).toBe("high");
   });
-  it("defaults to the CLI's own choices when nothing is picked", () => {
+  it("defaults to the recommended lead (Sonnet, medium) when nothing is picked (docs/token-budget.md)", () => {
     const opts = buildOptions({ room: "home", workspace: path.resolve("/w"), spec });
-    expect(opts.model).toBeUndefined();
-    expect(opts.effort).toBeUndefined();
+    expect(opts.model).toBe("sonnet");
+    expect(opts.effort).toBe("medium");
     expect(opts.permissionMode).toBe("default");
   });
   it("accepts only known modes and efforts and sane model names", () => {

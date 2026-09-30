@@ -39,7 +39,7 @@ describe("custom agents in runs", () => {
     expect(def.prompt).toContain("You are Data Wizard, an agent Gab made.");
     expect(def.prompt).toContain("You analyse data and explain it plainly.");
     expect(def.prompt).toContain("Gab's added goal for you: Always suggest one chart.");
-    expect(def.prompt).toContain(spec.skillScout);
+    expect(def.prompt).toContain("Output budget: at most");
   });
 
   it("drop a custom agent that no longer exists instead of failing the run", () => {
