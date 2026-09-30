@@ -1,0 +1,78 @@
+.shell {
+  display: grid;
+  grid-template-columns: var(--sidebar) minmax(0, 1fr);
+  height: 100dvh;
+}
+
+.main {
+  min-width: 0;
+  height: 100dvh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--bg);
+  border-right: 1px solid var(--line);
+  padding: 10px 10px 0;
+  overflow-y: auto;
+}
+
+.brand { display: flex; align-items: center; justify-content: space-between; padding: 4px 6px 12px; }
+.brandLink { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; letter-spacing: 0.02em; }
+.closeButton, .menuButton { display: none; background: none; border: 0; padding: 8px; border-radius: 8px; color: var(--muted); }
+.closeButton:hover, .menuButton:hover { color: var(--text); background: var(--raised); }
+
+.newButton, .navItem {
+  display: flex; align-items: center; gap: 10px;
+  padding: 7px 10px; border-radius: 8px; color: var(--text);
+}
+.newButton { background: var(--raised); margin-bottom: 8px; }
+.newButton:hover { background: var(--line-strong); }
+
+.nav, .subnav, .recents { list-style: none; margin: 0; padding: 0; }
+.navItem { color: #d9d8d2; flex: 1; }
+.navItem:hover, .subItem:hover, .recent:hover { background: var(--surface); }
+.navItem[aria-current="page"], .subItem[aria-current="page"] { background: var(--raised); color: var(--text); }
+.navRow { display: flex; align-items: center; }
+.disclosure { background: none; border: 0; color: var(--muted); padding: 7px; border-radius: 8px; display: grid; place-items: center; }
+.disclosure:hover { color: var(--text); background: var(--surface); }
+.disclosure svg { transition: transform 150ms ease; }
+.disclosure[data-open="true"] svg { transform: rotate(90deg); }
+
+.subnav { margin: 2px 0 6px 18px; border-left: 1px solid var(--line); padding-left: 6px; }
+.subItem { display: flex; align-items: center; gap: 8px; padding: 3px 8px; border-radius: 6px; color: var(--muted); font-size: 13px; }
+
+.recentsHead { color: var(--muted); font-size: 12px; padding: 18px 10px 6px; }
+.recents { flex: 1; min-height: 0; }
+.recent { display: flex; gap: 8px; align-items: baseline; padding: 5px 10px; border-radius: 8px; color: #d9d8d2; font-size: 13px; }
+.recentRoom { color: var(--dim); font-size: 11px; width: 58px; flex: none; overflow: hidden; text-overflow: ellipsis; }
+.recentTitle { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.recentsEmpty { color: var(--muted); font-size: 13px; padding: 4px 10px; }
+.linkButton { background: none; border: 0; color: var(--blue-text); padding: 0; text-decoration: underline; }
+
+.footer {
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 8px; margin-top: 8px; border-top: 1px solid var(--line);
+  position: sticky; bottom: 0; background: var(--bg);
+}
+.avatar { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: var(--raised); font-size: 11px; }
+.plan { color: var(--muted); }
+
+.scrim { display: none; }
+
+@media (max-width: 767px) {
+  .shell { grid-template-columns: minmax(0, 1fr); }
+  .sidebar {
+    position: fixed; inset: 0 auto 0 0; width: min(86vw, 300px); z-index: 30;
+    transform: translateX(-100%); transition: transform 180ms ease; visibility: hidden;
+  }
+  .shell[data-drawer="open"] .sidebar { transform: none; visibility: visible; }
+  .shell[data-drawer="open"] .scrim { display: block; position: fixed; inset: 0; background: rgb(0 0 0 / 0.55); z-index: 20; }
+  .menuButton { display: grid; place-items: center; position: fixed; top: 8px; left: 8px; z-index: 10; background: var(--bg); }
+  .closeButton { display: grid; place-items: center; }
+}

@@ -1,0 +1,47 @@
+/* Night-shift terminal: quiet slate, one blue creature doing the work. */
+:root {
+  --bg: #141413;
+  --surface: #1b1b19;
+  --raised: #232320;
+  --line: #2c2c29;
+  --line-strong: #3a3a36;
+  --text: #faf9f5;
+  --muted: #a3a29c;
+  --dim: #6f6e69;
+  --blue: #4a7bd8;
+  --blue-text: #7aa2ea;
+  --ok: #86c07f;
+  --err: #ec8069;
+  --warn: #e3b341;
+  --radius: 10px;
+  --sidebar: 260px;
+  --font: var(--font-mono), ui-monospace, "Cascadia Code", Consolas, monospace;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 14px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+button, input, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+a { color: inherit; text-decoration: none; }
+:focus-visible { outline: 2px solid var(--blue-text); outline-offset: 2px; border-radius: 4px; }
+::selection { background: var(--blue); color: var(--text); }
+
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
+}

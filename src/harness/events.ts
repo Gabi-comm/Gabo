@@ -1,0 +1,140 @@
+import { isAgentId, type AgentId } from "./agents";
+
+export type Decision = "allow" | "allow_session" | "deny";
+
+export interface SkillLine { agent: AgentId; skills: string[]; why: string }
+export interface SkillRec { name: string; description: string; agents: AgentId[] }
+
+/** Everything the browser receives over the run stream. */
+export type UiEvent =
+  | { type: "session"; sessionId: string; model: string; cwd: string }
+  | { type: "text"; delta: string; agent: AgentId | null }
+  | { type: "tool_start"; id: string; name: string; summary: string; agent: AgentId | null }
+  | { type: "tool_result"; id: string; ok: boolean; preview: string; lines: number }
+  | { type: "agent_start"; agent: AgentId; toolUseId: string; description: string }
+  | { type: "agent_progress"; agent: AgentId; summary: string }
+  | { type: "agent_stop"; agent: AgentId; toolUseId: string; ok: boolean }
+  | { type: "permission_request"; requestId: string; tool: string; summary: string }
+  | { type: "permission_resolved"; requestId: string; decision: Decision }
+  | { type: "skills"; lines: SkillLine[]; missing: SkillRec[]; note?: string }
+  | { type: "result"; ok: boolean; costUsd: number; inputTokens: number; outputTokens: number; durationMs: number }
+  | { type: "error"; message: string; hint?: string }
+  | { type: "done" };
+
+type Block = { type: string; [k: string]: unknown };
+type Msg = { type: string; subtype?: string; parent_tool_use_id?: string | null; [k: string]: unknown };
+
+const PREVIEW_LINES = 4;
+const PREVIEW_CHARS = 400;
+
+function clip(s: string, n = 80): string {
+  const one = s.replace(/\s+/g, " ").trim();
+  return one.length > n ? `${one.slice(0, n - 1)}…` : one;
+}
+
+/** Claude Code style one-liner: `Read(src/a.ts)`, `Bash(npm test)`. */
+export function summarizeTool(name: string, input: Record<string, unknown>): string {
+  const arg =
+    input.command ?? input.file_path ?? input.notebook_path ?? input.pattern ?? input.url ?? input.query ??
+    input.skill ?? input.description ?? "";
+  return arg === "" ? name : `${name}(${clip(String(arg))})`;
+}
+
+function resultText(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content.map((b: Block) => (b.type === "text" ? String(b.text) : `[${b.type}]`)).join("\n");
+  }
+  return "";
+}
+
+/**
+ * Stateful mapper from Agent SDK messages to UI events. One per run: it remembers which
+ * tool_use ids are subagents so nested text and results are attributed to the right mascot.
+ */
+export function createMapper() {
+  const subagentByToolUse = new Map<string, AgentId>();
+  const streamedFor = new Set<string>();
+  const key = (parent: string | null | undefined) => parent ?? "main";
+  const agentOf = (parent: string | null | undefined): AgentId | null =>
+    (parent && subagentByToolUse.get(parent)) || null;
+
+  return function map(msg: Msg): UiEvent[] {
+    switch (msg.type) {
+      case "system": {
+        if (msg.subtype === "init") {
+          return [{ type: "session", sessionId: String(msg.session_id), model: String(msg.model), cwd: String(msg.cwd) }];
+        }
+        if (msg.subtype === "task_progress" && typeof msg.summary === "string") {
+          const agent = subagentByToolUse.get(String(msg.tool_use_id));
+          return agent ? [{ type: "agent_progress", agent, summary: msg.summary }] : [];
+        }
+        return [];
+      }
+      case "stream_event": {
+        const ev = msg.event as { type?: string; delta?: { type?: string; text?: string } };
+        if (ev?.type === "content_block_delta" && ev.delta?.type === "text_delta" && ev.delta.text) {
+          streamedFor.add(key(msg.parent_tool_use_id));
+          return [{ type: "text", delta: ev.delta.text, agent: agentOf(msg.parent_tool_use_id) }];
+        }
+        return [];
+      }
+      case "assistant": {
+        const out: UiEvent[] = [];
+        const k = key(msg.parent_tool_use_id);
+        const streamed = streamedFor.delete(k);
+        const agent = agentOf(msg.parent_tool_use_id);
+        const blocks = ((msg.message as { content?: Block[] })?.content ?? []) as Block[];
+        for (const b of blocks) {
+          if (b.type === "text" && !streamed && b.text) {
+            out.push({ type: "text", delta: String(b.text), agent });
+          } else if (b.type === "tool_use") {
+            const id = String(b.id);
+            const name = String(b.name);
+            const input = (b.input ?? {}) as Record<string, unknown>;
+            if ((name === "Agent" || name === "Task") && isAgentId(input.subagent_type)) {
+              subagentByToolUse.set(id, input.subagent_type);
+              out.push({ type: "agent_start", agent: input.subagent_type, toolUseId: id, description: String(input.description ?? "") });
+            } else {
+              out.push({ type: "tool_start", id, name, summary: summarizeTool(name, input), agent });
+            }
+          }
+        }
+        return out;
+      }
+      case "user": {
+        const content = (msg.message as { content?: unknown })?.content;
+        if (!Array.isArray(content)) return [];
+        const out: UiEvent[] = [];
+        for (const b of content as Block[]) {
+          if (b.type !== "tool_result") continue;
+          const id = String(b.tool_use_id);
+          const ok = !b.is_error;
+          const sub = subagentByToolUse.get(id);
+          if (sub) {
+            out.push({ type: "agent_stop", agent: sub, toolUseId: id, ok });
+            continue;
+          }
+          const text = resultText(b.content);
+          const lines = text ? text.split("\n") : [];
+          const preview = lines.slice(0, PREVIEW_LINES).join("\n").slice(0, PREVIEW_CHARS);
+          out.push({ type: "tool_result", id, ok, preview, lines: lines.length });
+        }
+        return out;
+      }
+      case "result": {
+        const usage = (msg.usage ?? {}) as { input_tokens?: number; output_tokens?: number };
+        return [{
+          type: "result",
+          ok: msg.subtype === "success",
+          costUsd: Number(msg.total_cost_usd ?? 0),
+          inputTokens: usage.input_tokens ?? 0,
+          outputTokens: usage.output_tokens ?? 0,
+          durationMs: Number(msg.duration_ms ?? 0),
+        }];
+      }
+      default:
+        return [];
+    }
+  };
+}

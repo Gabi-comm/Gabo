@@ -1,0 +1,12 @@
+*.tsbuildinfo
+.data/
+.env*.local
+.next/
+.superpowers/
+next-env.d.ts
+node_modules/
+out/
+playwright-report/
+playwright-report/
+test-results/
+test-results/

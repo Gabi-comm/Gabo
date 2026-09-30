@@ -1,0 +1,24 @@
+.scene { display: block; width: 100%; height: auto; overflow: visible; }
+.scene g { transform-box: view-box; }
+.office { max-width: 640px; }
+.widget { max-width: 360px; }
+
+.walker { will-change: transform; }
+.screen { transition: fill 600ms ease; }
+
+.spark { animation: twinkle 1.1s steps(2) infinite; }
+@keyframes twinkle { 50% { opacity: 0; } }
+
+.scroll { animation: codeScroll 6s linear infinite; }
+@keyframes codeScroll { to { transform: translateY(-20.8px); } }
+
+.bob { animation: bob 0.44s steps(2) infinite; }
+@keyframes bob { 50% { transform: translateY(-0.6px); } }
+.idle { opacity: 0.55; }
+
+.lungeRight { animation: lungeR 0.5s steps(2) infinite; }
+.lungeLeft { animation: lungeL 0.5s steps(2) infinite; }
+@keyframes lungeR { 50% { transform: translateX(1.4px); } }
+@keyframes lungeL { 50% { transform: translateX(-1.4px); } }
+
+.waiting { font: 3px var(--font); fill: var(--muted); letter-spacing: 0.05em; }
