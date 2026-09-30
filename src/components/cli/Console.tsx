@@ -48,6 +48,17 @@ export function Console({ room, conversationId, sessionId, label, placeholder, h
   const info = useClaudeInfo();
   const [prefs, setPrefs] = usePrefs(info?.defaultMode);
   const [queue, setQueue] = useState<Queued[]>([]);
+  const [inputHistory, setInputHistory] = useState<string[]>([]);
+  useEffect(() => {
+    try { setInputHistory(JSON.parse(localStorage.getItem(INPUT_HISTORY_KEY) ?? "[]")); } catch { /* storage blocked */ }
+  }, []);
+  function remember(text: string) {
+    setInputHistory((h) => {
+      const next = [...h.filter((x) => x !== text), text].slice(-INPUT_HISTORY_MAX);
+      try { localStorage.setItem(INPUT_HISTORY_KEY, JSON.stringify(next)); } catch { /* storage blocked */ }
+      return next;
+    });
+  }
   const commands = useMemo<Cmd[]>(() => {
     const own = new Set(APP_COMMANDS.map((c) => c.cmd));
     const cli = (info?.commands ?? []).map((c) => ({ cmd: `/${c.name}`, help: c.description })).filter((c) => !own.has(c.cmd));
@@ -72,7 +83,7 @@ export function Console({ room, conversationId, sessionId, label, placeholder, h
     if (t.running || t.pendingPermission || queue.length === 0) return;
     const [next, ...rest] = queue;
     setQueue(rest);
-    void submit(next.text, next.images);
+    void submit(next.text, next.images, true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [t.running, t.pendingPermission, queue]);
   const pulled = useMemo(() => pulledAgents(t), [t]);
@@ -165,9 +176,10 @@ export function Console({ room, conversationId, sessionId, label, placeholder, h
     }
   }
 
-  async function submit(text: string, images: ImageAttachment[] = []) {
+  async function submit(text: string, images: ImageAttachment[] = [], fromQueue = false) {
     const value = text.trim();
     if (!value && images.length === 0) return;
+    if (value && !fromQueue) remember(value);
     if (t.running) { setQueue((q) => [...q, { text: value, images }]); return; }
     if (images.length) { stick.current = true; await send(value, { prefs: toRunPrefs(prefs), images }); return; }
     stick.current = true;
@@ -188,6 +200,7 @@ export function Console({ room, conversationId, sessionId, label, placeholder, h
       locked={t.pendingPermission !== null}
       commands={commands}
       queue={queue}
+      history={inputHistory}
       onSubmit={submit}
       onStop={() => { setQueue([]); stop(); }}
       onCycleMode={cycleMode}
@@ -522,6 +535,9 @@ function Spinner({ active }: { active: AgentId[] }) {
 }
 
 interface Cmd { cmd: string; help: string }
+
+const INPUT_HISTORY_KEY = "gabo:input-history";
+const INPUT_HISTORY_MAX = 100;
 interface Queued { text: string; images: ImageAttachment[] }
 interface Attachment extends ImageAttachment { url: string }
 
@@ -565,8 +581,8 @@ function StatusLine({ label, t, prefs, models, onMode, onModel, onEffort }: {
   );
 }
 
-function PromptBox({ placeholder, running, locked, commands, queue, onSubmit, onStop, onCycleMode, onUnqueue, findFiles, onError, status }: {
-  placeholder: string; running: boolean; locked: boolean; commands: Cmd[]; queue: Queued[];
+function PromptBox({ placeholder, running, locked, commands, queue, history, onSubmit, onStop, onCycleMode, onUnqueue, findFiles, onError, status }: {
+  placeholder: string; running: boolean; locked: boolean; commands: Cmd[]; queue: Queued[]; history: string[];
   onSubmit: (v: string, images: ImageAttachment[]) => void; onStop: () => void; onCycleMode: () => void; onUnqueue: (i: number) => void;
   findFiles: (q: string) => Promise<string[]>; onError: (message: string) => void; status: ReactNode;
 }) {
@@ -614,11 +630,38 @@ function PromptBox({ placeholder, running, locked, commands, queue, onSubmit, on
     }
     return true;
   }
+  const [sel, setSel] = useState(0);
+  const [dismissed, setDismissed] = useState(false);
+  const [histIdx, setHistIdx] = useState(-1);
+  const draft = useRef("");
+  const listRef = useRef<HTMLUListElement>(null);
+
   const typed = value.startsWith("/") && !value.includes(" ") ? value.slice(1).toLowerCase() : null;
-  const matches = typed === null ? [] : commands
+  const matches = typed === null || dismissed ? [] : commands
     .filter((c) => c.cmd.slice(1).toLowerCase().startsWith(typed) || (typed.length > 1 && c.cmd.toLowerCase().includes(typed)))
-    .sort((a, b) => Number(!a.cmd.slice(1).toLowerCase().startsWith(typed)) - Number(!b.cmd.slice(1).toLowerCase().startsWith(typed)))
-    .slice(0, 12);
+    .sort((a, b) => Number(!a.cmd.slice(1).toLowerCase().startsWith(typed)) - Number(!b.cmd.slice(1).toLowerCase().startsWith(typed)));
+  const fileMenu = mention && !dismissed && files.length > 0 ? files : [];
+  const menuSize = matches.length || fileMenu.length;
+
+  // A new query starts at the top, or on the command typed in full.
+  useEffect(() => {
+    const exact = matches.findIndex((m) => m.cmd.toLowerCase() === `/${typed}`);
+    setSel(exact >= 0 ? exact : 0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [typed, mention?.query, files.length]);
+  useEffect(() => {
+    listRef.current?.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: "nearest" });
+  }, [sel, menuSize]);
+
+  function recall(step: 1 | -1) {
+    const next = histIdx + step;
+    if (next < -1 || next >= history.length) return;
+    if (histIdx === -1) draft.current = value;
+    setHistIdx(next);
+    setValue(next === -1 ? draft.current : history[history.length - 1 - next]);
+    setMention(null);
+    requestAnimationFrame(() => { const el = ref.current; if (el) el.setSelectionRange(el.value.length, el.value.length); });
+  }
 
   useEffect(() => { if (!running && !locked) ref.current?.focus(); }, [running, locked]);
   useEffect(() => {
@@ -628,9 +671,11 @@ function PromptBox({ placeholder, running, locked, commands, queue, onSubmit, on
     el.style.height = `${Math.min(el.scrollHeight, 220)}px`;
   }, [value]);
 
-  function fire() {
-    if (locked || (!value.trim() && images.length === 0)) return;
-    const v = value;
+  function fire(text = value) {
+    if (locked || (!text.trim() && images.length === 0)) return;
+    const v = text;
+    setHistIdx(-1);
+    draft.current = "";
     const imgs = images.map(({ mediaType, data }) => ({ mediaType, data }));
     setValue("");
     setImages([]);
@@ -641,21 +686,21 @@ function PromptBox({ placeholder, running, locked, commands, queue, onSubmit, on
   return (
     <form className={styles.promptWrap} onSubmit={(e) => { e.preventDefault(); fire(); }}>
       {matches.length > 0 && (
-        <ul className={styles.slash} role="listbox" aria-label="Commands">
-          {matches.map((m) => (
-            <li key={m.cmd} role="option" aria-selected={false}>
-              <button type="button" onClick={() => { setValue(`${m.cmd} `); ref.current?.focus(); }}>
+        <ul className={styles.slash} role="listbox" aria-label="Commands" id="prompt-menu" ref={listRef}>
+          {matches.map((m, i) => (
+            <li key={m.cmd} id={`prompt-opt-${i}`} role="option" aria-selected={i === sel}>
+              <button type="button" tabIndex={-1} onMouseEnter={() => setSel(i)} onClick={() => { setValue(`${m.cmd} `); ref.current?.focus(); }}>
                 <span>{m.cmd}</span> <span className={styles.via}>{m.help}</span>
               </button>
             </li>
           ))}
         </ul>
       )}
-      {mention && files.length > 0 && (
-        <ul className={styles.slash} role="listbox" aria-label="Files">
-          {files.map((f) => (
-            <li key={f} role="option" aria-selected={false}>
-              <button type="button" onClick={() => pickFile(f)}>@{f}</button>
+      {fileMenu.length > 0 && (
+        <ul className={styles.slash} role="listbox" aria-label="Files" id="prompt-menu" ref={listRef}>
+          {fileMenu.map((f, i) => (
+            <li key={f} id={`prompt-opt-${i}`} role="option" aria-selected={i === sel}>
+              <button type="button" tabIndex={-1} onMouseEnter={() => setSel(i)} onClick={() => pickFile(f)}>@{f}</button>
             </li>
           ))}
         </ul>
@@ -697,17 +742,54 @@ function PromptBox({ placeholder, running, locked, commands, queue, onSubmit, on
           maxLength={100_000}
           placeholder={locked ? "Answer the permission prompt above (1, 2 or 3)" : running ? "Type to queue a message for when Claude finishes" : placeholder}
           disabled={locked}
-          onChange={(e) => { setValue(e.target.value); trackMention(e.target.value, e.target.selectionStart ?? e.target.value.length); }}
+          role="combobox"
+          aria-expanded={menuSize > 0}
+          aria-controls={menuSize > 0 ? "prompt-menu" : undefined}
+          aria-activedescendant={menuSize > 0 ? `prompt-opt-${sel}` : undefined}
+          aria-autocomplete="list"
+          onChange={(e) => {
+            setValue(e.target.value);
+            setDismissed(false);
+            setHistIdx(-1);
+            trackMention(e.target.value, e.target.selectionStart ?? e.target.value.length);
+          }}
           onPaste={(e) => {
             const pasted = Array.from(e.clipboardData.files);
             if (pasted.some((f) => IMAGE_TYPES.includes(f.type))) { e.preventDefault(); void addFiles(pasted); }
           }}
           onKeyDown={(e) => {
-            if (e.key === "Tab" && !e.shiftKey && mention && files.length > 0) { e.preventDefault(); pickFile(files[0]); }
-            else if (e.key === "Escape" && mention) { setMention(null); }
-            else if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); fire(); }
-            else if (e.key === "Tab" && e.shiftKey) { e.preventDefault(); onCycleMode(); }
-            else if (e.key === "Tab" && matches.length > 0) { e.preventDefault(); setValue(`${matches[0].cmd} `); }
+            const el = e.currentTarget;
+            // Menus (/ commands, @ files): arrows move, Enter/Tab pick, Esc closes.
+            if (menuSize > 0 && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+              e.preventDefault();
+              setSel((i) => (i + (e.key === "ArrowDown" ? 1 : -1) + menuSize) % menuSize);
+            } else if (menuSize > 0 && e.key === "Escape") {
+              e.preventDefault();
+              e.stopPropagation();
+              setDismissed(true);
+            } else if (fileMenu.length > 0 && (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey)) && !e.shiftKey) {
+              e.preventDefault();
+              pickFile(fileMenu[sel] ?? fileMenu[0]);
+            } else if (matches.length > 0 && e.key === "Tab" && !e.shiftKey) {
+              e.preventDefault();
+              setValue(`${(matches[sel] ?? matches[0]).cmd} `);
+            } else if (matches.length > 0 && e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+              e.preventDefault();
+              fire((matches[sel] ?? matches[0]).cmd);
+            } else if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+              e.preventDefault();
+              fire();
+            } else if (e.key === "Tab" && e.shiftKey) {
+              e.preventDefault();
+              onCycleMode();
+            } else if (e.key === "ArrowUp" && history.length > 0 && !el.value.slice(0, el.selectionStart).includes("\n")) {
+              // Previous prompts, like a terminal: only from the first line so multi-line editing still works.
+              e.preventDefault();
+              recall(1);
+            } else if (e.key === "ArrowDown" && histIdx >= 0 && !el.value.slice(el.selectionEnd).includes("\n")) {
+              e.preventDefault();
+              recall(-1);
+            }
           }}
         />
         {running && !value.trim() && images.length === 0 ? (

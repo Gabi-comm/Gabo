@@ -344,3 +344,40 @@ test("a pasted screenshot is attached and sent as an image", async ({ page }) =>
   await expect(page.locator("main ol").getByText("[1 image]")).toBeVisible();
   await expect(page.getByRole("list", { name: "Attached images" })).toHaveCount(0);
 });
+
+test("/ menu: arrow keys move through commands and Enter runs the highlighted one", async ({ page }) => {
+  await page.goto("/");
+  const input = page.locator("#prompt-input");
+  await input.click();
+  await page.keyboard.type("/");
+  const menu = page.getByRole("listbox", { name: "Commands" });
+  await expect(menu.getByRole("option").first()).toHaveAttribute("aria-selected", "true");
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("ArrowDown");
+  await expect(menu.getByRole("option", { selected: true })).toContainText("/mode");
+  await page.keyboard.press("ArrowUp");
+  await expect(menu.getByRole("option", { selected: true })).toContainText("/model");
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("Enter");
+  await expect(page.getByText(/Permission mode: (default|acceptEdits|plan|auto)\. Options/)).toBeVisible();
+});
+
+test("Up and Down recall previous prompts like a terminal", async ({ page }) => {
+  await page.goto("/");
+  await page.evaluate(() => localStorage.removeItem("gabo:input-history"));
+  const input = page.locator("#prompt-input");
+  for (const [i, text] of ["first prompt", "second prompt"].entries()) {
+    await input.fill(text);
+    await page.keyboard.press("Enter");
+    await expect(page.getByText("Done. Fake run finished.")).toHaveCount(i + 1, { timeout: 20_000 });
+  }
+  await input.fill("draft");
+  await page.keyboard.press("ArrowUp");
+  await expect(input).toHaveValue("second prompt");
+  await page.keyboard.press("ArrowUp");
+  await expect(input).toHaveValue("first prompt");
+  await page.keyboard.press("ArrowDown");
+  await expect(input).toHaveValue("second prompt");
+  await page.keyboard.press("ArrowDown");
+  await expect(input).toHaveValue("draft");
+});
