@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { JetBrains_Mono } from "next/font/google";
 import { Shell } from "@/components/shell/Shell";
 import "./globals.css";
+import "@/components/mascot/mascot.css";
 
 const mono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-mono", display: "swap" });
 

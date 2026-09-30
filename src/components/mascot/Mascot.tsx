@@ -90,6 +90,8 @@ export interface MascotProps extends ArtProps {
 /** A standalone mascot. It plays its role's animation when hovered, or when a link/button around it is. */
 export function Mascot({ size = 96, title, className, ...art }: MascotProps) {
   const kind = art.kind ?? "base";
+  // Agents hold their prop out in front of them unless a pose is asked for.
+  const pose = art.pose ?? (PROPS[kind].held ? "hold" : "stand");
   const label = title ?? (kind === "base" || kind === "studying" ? "Gabo mascot" : AGENTS[kind].name);
   return (
     <svg
@@ -102,7 +104,7 @@ export function Mascot({ size = 96, title, className, ...art }: MascotProps) {
       aria-label={label}
     >
       <title>{label}</title>
-      <MascotArt {...art} />
+      <MascotArt {...art} pose={pose} />
     </svg>
   );
 }
