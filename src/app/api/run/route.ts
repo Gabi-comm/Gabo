@@ -1,10 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { isRoomId } from "@/harness/rooms";
-import { broker } from "@/harness/permissions";
+import { broker, pendingAnswers } from "@/harness/permissions";
 import { fakeRun, runRoom } from "@/harness/runner";
 import type { UiEvent } from "@/harness/events";
 import { rejectForeign } from "@/server/guard";
 import { parseRunPrefs } from "@/harness/controls";
+import { checkImages, type ImageAttachment } from "@/harness/images";
 import { FAKE, getWorkspace, sessions, validateWorkspace } from "@/server/config";
 import { prepareSkills } from "@/server/skills";
 
@@ -19,20 +20,23 @@ export async function POST(req: Request) {
   const denied = rejectForeign(req);
   if (denied) return denied;
 
-  let body: { conversationId?: unknown; room?: unknown; prompt?: unknown; full?: unknown; prefs?: unknown };
+  let body: { conversationId?: unknown; room?: unknown; prompt?: unknown; full?: unknown; prefs?: unknown; images?: unknown };
   try { body = await req.json(); } catch { return Response.json({ error: "Body must be JSON." }, { status: 400 }); }
   const { conversationId, room, prompt } = body;
   if (typeof conversationId !== "string" || !/^[\w-]{1,64}$/.test(conversationId)) {
     return Response.json({ error: "Bad conversationId." }, { status: 400 });
   }
   if (!isRoomId(room)) return Response.json({ error: "Unknown room." }, { status: 400 });
-  if (typeof prompt !== "string" || prompt.trim() === "") return Response.json({ error: "Say something first." }, { status: 400 });
+  const imageError = checkImages(body.images);
+  if (imageError) return Response.json({ error: imageError }, { status: 400 });
+  const images = (body.images ?? []) as ImageAttachment[];
+  if (typeof prompt !== "string" || (prompt.trim() === "" && images.length === 0)) return Response.json({ error: "Say something first." }, { status: 400 });
   if (prompt.length > MAX_PROMPT) return Response.json({ error: `Prompt is over ${MAX_PROMPT.toLocaleString()} characters.` }, { status: 413 });
   if (active.has(conversationId)) return Response.json({ error: "A run is already going in this chat." }, { status: 409 });
 
   active.add(conversationId);
   const existing = sessions.get(conversationId);
-  const record = existing ?? sessions.upsert({ id: conversationId, room, title: prompt.trim().slice(0, 60) });
+  const record = existing ?? sessions.upsert({ id: conversationId, room, title: prompt.trim().slice(0, 60) || "Image" });
   const runId = randomUUID();
   const abort = new AbortController();
   req.signal.addEventListener("abort", () => abort.abort());
@@ -49,9 +53,17 @@ export async function POST(req: Request) {
       try {
         if (FAKE) {
           await fakeRun({
-            room, prompt, emit, signal: abort.signal,
-            ask: (tool, summary) => broker.request(runId, { tool, summary, input: {} }, (r) =>
-              emit({ type: "permission_request", requestId: r.requestId, tool, summary })),
+            room, prompt, emit, signal: abort.signal, prefs: parseRunPrefs(body.prefs), images,
+            ask: async (tool, summary, extra = {}) => {
+              let requestId = "";
+              const decision = await broker.request(runId, { tool, summary, input: {}, ...extra }, (r) => {
+                requestId = r.requestId;
+                emit({ type: "permission_request", requestId: r.requestId, tool, summary, ...extra });
+              });
+              const answers = pendingAnswers.get(requestId);
+              pendingAnswers.delete(requestId);
+              return { decision, answers };
+            },
           });
         } else {
           // A Claude Code session opened from history keeps running in its own project folder.
@@ -60,7 +72,7 @@ export async function POST(req: Request) {
           const skillsByAgent = await prepareSkills({ conversationId, room, prompt, workspace, firstTurn: !existing?.sdkSessionId, emit, signal: abort.signal });
           await runRoom({
             runId, conversationId, room, prompt, workspace, emit, signal: abort.signal,
-            sessionId: record.sdkSessionId, skillsByAgent, fullArena: body.full === true, prefs: parseRunPrefs(body.prefs),
+            sessionId: record.sdkSessionId, skillsByAgent, fullArena: body.full === true, prefs: parseRunPrefs(body.prefs), images,
           });
         }
       } catch (err) {

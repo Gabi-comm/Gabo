@@ -1,14 +1,14 @@
 import type { AgentId } from "@/harness/agents";
-import type { Decision, SkillLine, SkillRec, UiEvent } from "@/harness/events";
+import type { AskKind, Decision, Diff, Question, SkillLine, SkillRec, Todo, UiEvent } from "@/harness/events";
 
 export type Status = "running" | "ok" | "error" | "stopped";
 
 export type Item =
-  | { kind: "user"; text: string }
+  | { kind: "user"; text: string; images?: number }
   | { kind: "text"; agent: AgentId | null; text: string }
-  | { kind: "tool"; id: string; summary: string; agent: AgentId | null; status: Status; preview?: string; lines?: number }
+  | { kind: "tool"; id: string; summary: string; agent: AgentId | null; status: Status; preview?: string; lines?: number; diff?: Diff }
   | { kind: "agent"; agent: AgentId; toolUseId: string; description: string; status: Status; progress?: string }
-  | { kind: "permission"; requestId: string; tool: string; summary: string; decision?: Decision }
+  | { kind: "permission"; requestId: string; tool: string; summary: string; decision?: Decision; ask?: AskKind; questions?: Question[]; plan?: string; answers?: Record<string, string> }
   | { kind: "skills"; lines: SkillLine[]; missing: SkillRec[]; note?: string; installed?: string[]; dismissed?: boolean }
   | { kind: "error"; message: string; hint?: string }
   | { kind: "notice"; text: string };
@@ -23,11 +23,13 @@ export interface Transcript {
   costUsd: number;
   /** Permission mode Claude Code last reported (e.g. after a plan is approved). */
   mode?: string;
+  /** The latest TodoWrite list, shown above the input like the CLI. */
+  todos?: Todo[];
 }
 
 export type Action =
   | UiEvent
-  | { type: "user_prompt"; text: string }
+  | { type: "user_prompt"; text: string; images?: number }
   | { type: "notice"; text: string }
   | { type: "skills_installed"; names: string[] }
   | { type: "skills_dismissed" }
@@ -55,7 +57,7 @@ function patchLast<K extends Item["kind"]>(
 export function reduce(t: Transcript, a: Action): Transcript {
   switch (a.type) {
     case "user_prompt":
-      return { ...t, running: true, items: [...t.items, { kind: "user", text: a.text }] };
+      return { ...t, running: true, items: [...t.items, { kind: "user", text: a.text, ...(a.images ? { images: a.images } : {}) }] };
     case "notice":
       return { ...t, items: [...t.items, { kind: "notice", text: a.text }] };
     case "clear":
@@ -74,7 +76,11 @@ export function reduce(t: Transcript, a: Action): Transcript {
       return { ...t, items: [...t.items, { kind: "text", agent: a.agent, text: a.delta }] };
     }
     case "tool_start":
-      return { ...t, items: [...t.items, { kind: "tool", id: a.id, summary: a.summary, agent: a.agent, status: "running" }] };
+      return {
+        ...t,
+        ...(a.todos ? { todos: a.todos } : {}),
+        items: [...t.items, { kind: "tool", id: a.id, summary: a.summary, agent: a.agent, status: "running", ...(a.diff ? { diff: a.diff } : {}) }],
+      };
     case "tool_result":
       return { ...t, items: patchLast(t.items, "tool", (i) => i.id === a.id, { status: a.ok ? "ok" : "error", preview: a.preview, lines: a.lines }) };
     case "agent_start":
@@ -86,12 +92,15 @@ export function reduce(t: Transcript, a: Action): Transcript {
     case "permission_request":
       return {
         ...t, pendingPermission: a.requestId,
-        items: [...t.items, { kind: "permission", requestId: a.requestId, tool: a.tool, summary: a.summary }],
+        items: [...t.items, {
+          kind: "permission", requestId: a.requestId, tool: a.tool, summary: a.summary,
+          ...(a.kind ? { ask: a.kind } : {}), ...(a.questions ? { questions: a.questions } : {}), ...(a.plan !== undefined ? { plan: a.plan } : {}),
+        }],
       };
     case "permission_resolved":
       return {
         ...t, pendingPermission: t.pendingPermission === a.requestId ? null : t.pendingPermission,
-        items: patchLast(t.items, "permission", (i) => i.requestId === a.requestId, { decision: a.decision }),
+        items: patchLast(t.items, "permission", (i) => i.requestId === a.requestId, { decision: a.decision, ...(a.answers ? { answers: a.answers } : {}) }),
       };
     case "skills":
       return { ...t, items: [...t.items, { kind: "skills", lines: a.lines, missing: a.missing, note: a.note }] };

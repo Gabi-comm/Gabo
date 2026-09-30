@@ -232,3 +232,115 @@ test("Recents lists Claude Code history; opening a CLI session shows its transcr
   await page.keyboard.press("Enter");
   await expect(page.getByText("Done. Fake run finished.")).toBeVisible({ timeout: 20_000 });
 });
+
+test("status line: Shift+Tab cycles permission mode; model and effort reach the run", async ({ page }) => {
+  await page.goto("/");
+  await page.evaluate(() => localStorage.removeItem("gabo:prefs"));
+  await page.reload();
+  const mode = page.getByRole("button", { name: /ask before edits|accept edits|plan mode|auto mode/ });
+  await expect(mode).toHaveText("ask before edits");
+  await expect(page.getByLabel("Model").locator("option")).toHaveCount(4); // hydrated, CLI info loaded
+  await page.locator("#prompt-input").focus();
+  await page.keyboard.press("Shift+Tab");
+  await expect(mode).toHaveText("⏵⏵ accept edits on");
+  await page.keyboard.press("Shift+Tab");
+  await expect(mode).toHaveText("⏸ plan mode on");
+  await page.getByLabel("Model").selectOption("opus");
+  await page.getByLabel("Effort").selectOption("high");
+  await page.locator("#prompt-input").fill("plan something");
+  await page.keyboard.press("Enter");
+  await expect(page.getByText("Run settings: mode plan, model opus, effort high")).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole("button", { name: /plan mode/ })).toBeVisible();
+});
+
+test("typing while Claude works queues the message and sends it next", async ({ page }) => {
+  await page.goto("/library");
+  const input = page.locator("#prompt-input");
+  await input.fill("first question");
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("status")).toBeVisible();
+  await input.fill("follow-up question");
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("list", { name: "Queued messages" })).toContainText("follow-up question");
+  await expect(page.locator("main ol").getByText("follow-up question", { exact: true })).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByRole("list", { name: "Queued messages" })).toHaveCount(0);
+  await expect(page.getByText("Done. Fake run finished.")).toHaveCount(2, { timeout: 20_000 });
+});
+
+test("/ lists Claude Code's own commands and passes them through", async ({ page }) => {
+  await page.goto("/");
+  const input = page.locator("#prompt-input");
+  await input.fill("/brain");
+  await expect(page.getByRole("listbox", { name: "Commands" })).toContainText("/superpowers:brainstorming");
+  await input.fill("/context");
+  await page.keyboard.press("Enter");
+  await expect(page.locator("main ol").getByText("/context", { exact: true })).toBeVisible();
+  await expect(page.getByText("Unknown command")).toHaveCount(0);
+});
+
+test("AskUserQuestion: Gab picks an option and Claude gets the answer", async ({ page }) => {
+  await page.goto("/");
+  await page.locator("#prompt-input").fill("please ask me something");
+  await page.keyboard.press("Enter");
+  const q = page.getByRole("group", { name: "Claude has a question" });
+  await expect(q).toContainText("Which database?");
+  await q.getByLabel(/SQLite/).check();
+  await q.getByRole("button", { name: "Answer" }).click();
+  await expect(page.getByText('Answers: {"Which database?":"SQLite"}')).toBeVisible();
+  await expect(page.getByText("Question — Which database? → SQLite")).toBeVisible();
+});
+
+test("plan approval: 'auto-accept edits' flips the mode like the CLI", async ({ page }) => {
+  await page.goto("/");
+  await page.evaluate(() => localStorage.removeItem("gabo:prefs"));
+  await page.reload();
+  await page.locator("#prompt-input").fill("make a plan for the fix");
+  await page.keyboard.press("Enter");
+  const plan = page.getByRole("group", { name: "Claude has a plan" });
+  await expect(plan).toContainText("Add tests");
+  await page.keyboard.press("1");
+  await expect(page.getByText("Plan approved.")).toBeVisible();
+  await expect(page.getByRole("button", { name: /accept edits on/ })).toBeVisible();
+});
+
+test("todo list and edit diffs show like the CLI", async ({ page }) => {
+  await page.goto("/hackathon");
+  await page.locator("#prompt-input").fill("todo: build it");
+  await page.keyboard.press("Enter");
+  await page.getByRole("group", { name: /Permission needed/ }).getByRole("button", { name: /Yes$/ }).click();
+  await expect(page.getByLabel("Diff of notes.md")).toContainText("+ # Notes");
+  const todos = page.getByRole("list", { name: "Todo list" });
+  await expect(todos).toContainText("Fix the bug");
+  await expect(todos).toContainText("(in progress)");
+});
+
+test("@ suggests workspace files and inserts the path", async ({ page }) => {
+  await page.goto("/");
+  const input = page.locator("#prompt-input");
+  await input.click();
+  await page.keyboard.type("look at @log");
+  const list = page.getByRole("listbox", { name: "Files" });
+  await expect(list).toContainText("@src/auth/login.ts");
+  await page.keyboard.press("Tab");
+  await expect(input).toHaveValue("look at @src/auth/login.ts ");
+});
+
+test("a pasted screenshot is attached and sent as an image", async ({ page }) => {
+  await page.goto("/");
+  const input = page.locator("#prompt-input");
+  await input.click();
+  await page.evaluate(() => {
+    const b64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+    const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+    const dt = new DataTransfer();
+    dt.items.add(new File([bytes], "shot.png", { type: "image/png" }));
+    document.querySelector("#prompt-input")!.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }));
+  });
+  await expect(page.getByRole("list", { name: "Attached images" }).getByRole("img")).toHaveCount(1);
+  await input.fill("what is wrong here?");
+  await page.keyboard.press("Enter");
+  await expect(page.getByText("Received 1 image (image/png).")).toBeVisible();
+  await expect(page.locator("main ol").getByText("[1 image]")).toBeVisible();
+  await expect(page.getByRole("list", { name: "Attached images" })).toHaveCount(0);
+});

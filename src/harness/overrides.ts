@@ -17,7 +17,9 @@ export const MAX_PROMPT = 20_000;
 export const MAX_GOAL = 4_000;
 
 /** Tracked in git (config/), so edited prompts can be committed alongside the code. */
-export const OVERRIDES_FILE = path.join(process.cwd(), "config", "agent-overrides.json");
+export const OVERRIDES_FILE = process.env.HARNESS_FAKE === "1"
+  ? path.join(process.cwd(), ".data-fake", "agent-overrides.json") // e2e runs never edit the real, tracked file
+  : path.join(process.cwd(), "config", "agent-overrides.json");
 
 export function loadOverrides(file = OVERRIDES_FILE): Overrides {
   try {

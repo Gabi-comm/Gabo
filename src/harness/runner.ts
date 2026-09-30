@@ -1,9 +1,10 @@
 import os from "node:os";
 import path from "node:path";
-import type { AgentDefinition, CanUseTool, Options, PermissionResult, Query } from "@anthropic-ai/claude-agent-sdk";
+import type { AgentDefinition, CanUseTool, Options, PermissionResult, Query, SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
+import { userContent, type ImageAttachment } from "./images";
 import { AGENTS, type AgentId } from "./agents";
-import { createMapper, type Decision, type UiEvent } from "./events";
-import { broker as defaultBroker, guardToolInput, sessionRuleKey, type PermissionBroker, type PermissionAsk } from "./permissions";
+import { createMapper, type Decision, type Question, type UiEvent } from "./events";
+import { broker as defaultBroker, guardToolInput, pendingAnswers, sessionRuleKey, type PermissionBroker, type PermissionAsk } from "./permissions";
 import { rosterFor, workflowFor, type RoomId } from "./rooms";
 import { loadSpec, type ParsedSpec } from "./spec";
 import { loadOverrides, type AgentOverride, type Overrides } from "./overrides";
@@ -77,10 +78,33 @@ export interface CanUseToolCtx {
   broker: PermissionBroker;
   sessionRules: Set<string>;
   onAsk: (req: { requestId: string } & PermissionAsk) => void;
+  /** Where /api/permission leaves AskUserQuestion answers. */
+  answers?: Map<string, Record<string, string>>;
 }
 
-export function makeCanUseTool({ runId, workspace, broker, sessionRules, onAsk }: CanUseToolCtx): CanUseTool {
+export function makeCanUseTool({ runId, workspace, broker, sessionRules, onAsk, answers = pendingAnswers }: CanUseToolCtx): CanUseTool {
   return async (tool, input): Promise<PermissionResult> => {
+    // Claude asking Gab something: always shown, never covered by a "yes for this chat" rule.
+    if (tool === "AskUserQuestion") {
+      let requestId = "";
+      const questions = (Array.isArray(input.questions) ? input.questions : []) as Question[];
+      const decision = await broker.request(runId, { tool, summary: "Claude has a question", input, kind: "question", questions }, (req) => {
+        requestId = req.requestId;
+        onAsk(req);
+      });
+      const picked = answers.get(requestId);
+      answers.delete(requestId);
+      if (decision === "deny" || !picked) return { behavior: "deny", message: "Gab skipped the question. Continue with your best judgement or ask differently." };
+      return { behavior: "allow", updatedInput: { ...input, answers: picked } };
+    }
+    // Plan approval, with the CLI's three choices.
+    if (tool === "ExitPlanMode") {
+      const plan = typeof input.plan === "string" ? input.plan : "";
+      const decision = await broker.request(runId, { tool, summary: "Claude has a plan", input, kind: "plan", plan }, onAsk);
+      if (decision === "deny") return { behavior: "deny", message: "Gab wants to keep planning. Refine the plan before editing anything." };
+      const mode = decision === "allow_session" ? "acceptEdits" : "default";
+      return { behavior: "allow", updatedInput: input, updatedPermissions: [{ type: "setMode", mode, destination: "session" }] };
+    }
     const blocked = guardToolInput(tool, input, workspace, SKILL_READ_ROOTS);
     if (blocked) return { behavior: "deny", message: blocked };
     const rule = sessionRuleKey(tool, input);
@@ -109,6 +133,8 @@ export interface RunInput {
   fullArena?: boolean;
   /** Model, permission mode and effort picked in the status line. */
   prefs?: RunPrefs;
+  /** Images pasted into the message. */
+  images?: ImageAttachment[];
   emit: (e: UiEvent) => void;
   signal: AbortSignal;
   /** Test seam; defaults to the Agent SDK's query(). */
@@ -124,7 +150,7 @@ export function preToolUseReason(tool: string, toolInput: Record<string, unknown
 const LOGIN_HINT = "Open a terminal, run `claude`, then `/login` with your Pro/Max account.";
 
 export async function runRoom(input: RunInput): Promise<void> {
-  const { runId, conversationId, room, prompt, workspace, sessionId, skillsByAgent, fullArena = false, prefs, emit, signal } = input;
+  const { runId, conversationId, room, prompt, workspace, sessionId, skillsByAgent, fullArena = false, prefs, images = [], emit, signal } = input;
   // Esc can land while setup awaits (skill scout, SDK import, Python check); an abort before the
   // listener below is attached would otherwise be missed and the run would go on unseen.
   const stopped = () => {
@@ -162,7 +188,10 @@ export async function runRoom(input: RunInput): Promise<void> {
   signal.addEventListener("abort", onAbort);
 
   const onAsk = (req: { requestId: string } & PermissionAsk) =>
-    emit({ type: "permission_request", requestId: req.requestId, tool: req.tool, summary: req.summary });
+    emit({
+      type: "permission_request", requestId: req.requestId, tool: req.tool, summary: req.summary,
+      ...(req.kind ? { kind: req.kind } : {}), ...(req.questions ? { questions: req.questions } : {}), ...(req.kind === "plan" ? { plan: req.plan ?? "" } : {}),
+    });
 
   const options: Options = {
     ...buildOptions({ room, workspace, spec, sessionId, skillsByAgent, extraWorkflow, overrides: loadOverrides(), prefs }),
@@ -184,7 +213,12 @@ export async function runRoom(input: RunInput): Promise<void> {
 
   const map = createMapper();
   const stream = async () => {
-    const live = query({ prompt, options });
+    // With images the message goes in as content blocks (one streamed user message), like a pasted screenshot.
+    async function* withImages(): AsyncGenerator<SDKUserMessage> {
+      const content = userContent(prompt, images).filter((b) => b.type !== "text" || b.text.trim() !== "");
+      yield { type: "user", message: { role: "user", content: content as never }, parent_tool_use_id: null, session_id: sessionId ?? "" } as SDKUserMessage;
+    }
+    const live = query({ prompt: images.length ? withImages() : prompt, options });
     liveQueries.set(conversationId, live);
     for await (const msg of live) {
       for (const e of map(msg as never)) emit(e);
@@ -219,10 +253,12 @@ export interface FakeRunInput {
   emit: (e: UiEvent) => void;
   signal: AbortSignal;
   delayMs?: number;
-  ask?: (tool: string, summary: string) => Promise<Decision>;
+  ask?: (tool: string, summary: string, extra?: Pick<PermissionAsk, "kind" | "questions" | "plan">) => Promise<{ decision: Decision; answers?: Record<string, string> }>;
+  prefs?: RunPrefs;
+  images?: ImageAttachment[];
 }
 
-export async function fakeRun({ room, prompt, emit, signal, delayMs = 120, ask }: FakeRunInput): Promise<void> {
+export async function fakeRun({ room, prompt, emit, signal, delayMs = 120, ask, prefs = {}, images = [] }: FakeRunInput): Promise<void> {
   const wait = () => new Promise((r) => setTimeout(r, delayMs));
   const step = async (e: UiEvent) => {
     if (signal.aborted) throw new Error("aborted");
@@ -231,6 +267,8 @@ export async function fakeRun({ room, prompt, emit, signal, delayMs = 120, ask }
   };
   try {
     await step({ type: "session", sessionId: "fake-session", model: "fake-model", cwd: "C:/fake/workspace" });
+    await step({ type: "notice", text: `Run settings: mode ${prefs.mode ?? "default"}, model ${prefs.model ?? "default"}, effort ${prefs.effort ?? "auto"}` });
+    if (images.length) await step({ type: "notice", text: `Received ${images.length} image${images.length === 1 ? "" : "s"} (${images.map((i) => i.mediaType).join(", ")}).` });
     const roster = rosterFor(room);
     const uiAgents = new Set<AgentId>(["designer", "tester"]);
     await step({
@@ -249,9 +287,24 @@ export async function fakeRun({ room, prompt, emit, signal, delayMs = 120, ask }
     await step({ type: "tool_start", id: "f1", name: "Read", summary: "Read(README.md)", agent: null });
     await step({ type: "tool_result", id: "f1", ok: true, preview: "# Fake workspace\nNothing here yet.", lines: 2 });
     if (/write|build/i.test(prompt) && ask) {
-      await step({ type: "tool_start", id: "f2", name: "Write", summary: "Write(notes.md)", agent: null });
-      const decision = await ask("Write", "Write(notes.md)");
+      await step({ type: "tool_start", id: "f2", name: "Write", summary: "Write(notes.md)", agent: null, diff: { path: "notes.md", added: "# Notes\nFirst line" } });
+      const { decision } = await ask("Write", "Write(notes.md)");
       await step({ type: "tool_result", id: "f2", ok: decision !== "deny", preview: decision === "deny" ? "Denied by Gab." : "Wrote 1 line.", lines: 1 });
+    }
+    if (/todo/i.test(prompt)) {
+      await step({ type: "tool_start", id: "td", name: "TodoWrite", summary: "Update Todos", agent: null, todos: [
+        { content: "Read the code", status: "completed" }, { content: "Fix the bug", status: "in_progress" }, { content: "Add a test", status: "pending" },
+      ] });
+    }
+    if (/ask me/i.test(prompt) && ask) {
+      const questions = [{ question: "Which database?", header: "DB", multiSelect: false, options: [{ label: "Postgres", description: "Relational" }, { label: "SQLite", description: "One file" }] }];
+      const { decision, answers } = await ask("AskUserQuestion", "Claude has a question", { kind: "question", questions });
+      await step({ type: "notice", text: decision === "deny" ? "Question skipped." : `Answers: ${JSON.stringify(answers ?? {})}` });
+    }
+    if (/make a plan/i.test(prompt) && ask) {
+      const { decision } = await ask("ExitPlanMode", "Claude has a plan", { kind: "plan", plan: "## Plan\n1. Add tests\n2. Fix the bug" });
+      if (decision === "allow_session") await step({ type: "mode", mode: "acceptEdits" });
+      await step({ type: "notice", text: decision === "deny" ? "Keeps planning." : "Plan approved." });
     }
     for (const [i, agent] of roster.entries()) {
       const id = `a${i}`;

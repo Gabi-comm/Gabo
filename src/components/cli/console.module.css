@@ -150,3 +150,49 @@
   .dock { padding: 0 12px 12px; }
   .status .statusHint { display: none; }
 }
+
+/* ---------- session controls (status line) ---------- */
+.modeButton, .picker {
+  background: transparent; border: 1px solid transparent; border-radius: 6px;
+  color: var(--muted); font-size: 12px; padding: 1px 6px; margin-left: -6px;
+}
+.modeButton:hover, .picker:hover { border-color: var(--line-strong); color: var(--text); }
+.modeButton[data-mode="acceptEdits"] { color: #b9a4f0; }
+.modeButton[data-mode="plan"] { color: #6fc7c2; }
+.modeButton[data-mode="auto"] { color: var(--warn); }
+.picker { max-width: 16ch; }
+.picker option { background: var(--surface); color: var(--text); }
+
+.queue { list-style: none; margin: 0 0 6px; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.queue li { display: flex; align-items: center; gap: 8px; background: var(--surface); border: 1px dashed var(--line-strong); border-radius: 8px; padding: 4px 10px; font-size: 13px; }
+.queueText { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.queue button { background: none; border: 0; color: var(--muted); padding: 0 4px; font-size: 16px; line-height: 1; }
+.queue button:hover { color: var(--text); }
+
+/* ---------- interactive tools ---------- */
+.diff { margin: 6px 0 0 18px; font-size: 12.5px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.diffDel { color: #f0a493; background: rgb(236 128 105 / 0.08); }
+.diffAdd { color: #a9d9a3; background: rgb(134 192 127 / 0.08); }
+
+.question { border: 0; margin: 0 0 12px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.question legend { margin-bottom: 6px; font-weight: 600; overflow-wrap: anywhere; }
+.qHeader { color: var(--blue-text); font-weight: 400; font-size: 12px; margin-right: 4px; }
+.option { display: flex; gap: 8px; align-items: baseline; cursor: pointer; overflow-wrap: anywhere; }
+.option input { accent-color: var(--blue); }
+.otherInput { background: var(--surface); border: 1px solid var(--line-strong); border-radius: 6px; padding: 4px 8px; margin-top: 2px; max-width: 420px; }
+.otherInput:focus-visible { outline: 2px solid var(--blue-text); outline-offset: 1px; }
+.planBody { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin-bottom: 12px; max-height: 360px; overflow-y: auto; }
+
+.todos { list-style: none; margin: 0 auto 8px; padding: 8px 12px; width: min(100%, 780px); border: 1px solid var(--line); border-radius: 10px; font-size: 13px; }
+.todos li[data-status="completed"] { color: var(--dim); text-decoration: line-through; }
+.todos li[data-status="in_progress"] { color: var(--blue-text); }
+
+/* ---------- attachments ---------- */
+.attachments { list-style: none; margin: 0 0 6px; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; }
+.attachments li { position: relative; }
+.attachments img { width: 56px; height: 56px; object-fit: cover; border-radius: 8px; border: 1px solid var(--line-strong); display: block; }
+.attachments button {
+  position: absolute; top: -6px; right: -6px; width: 20px; height: 20px; border-radius: 50%;
+  border: 1px solid var(--line-strong); background: var(--raised); color: var(--text); font-size: 12px; line-height: 1; padding: 0;
+}
+.imageTag { color: var(--blue-text); }

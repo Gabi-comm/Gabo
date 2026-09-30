@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { AGENTS, type AgentId } from "@/harness/agents";
-import type { Decision } from "@/harness/events";
+import type { Decision, Diff, Todo } from "@/harness/events";
 import { rosterFor, type RoomId } from "@/harness/rooms";
 import { Mascot } from "@/components/mascot/Mascot";
 import { activeAgents, pulledAgents, type Item, type Transcript } from "./transcript";
@@ -12,6 +12,7 @@ import { useConversation } from "./useConversation";
 import { SkillCard } from "./SkillCard";
 import { fetchClaudeInfo, toRunPrefs, useClaudeInfo, usePrefs, type ClaudeInfo, type Prefs } from "./useClaude";
 import { EFFORTS, MODES, MODE_LABELS, isMode, nextMode, type Mode } from "@/harness/controls";
+import { MAX_IMAGES, MAX_IMAGE_B64, type ImageAttachment } from "@/harness/images";
 import styles from "./console.module.css";
 
 export interface ConsoleProps {
@@ -46,7 +47,7 @@ export function Console({ room, conversationId, sessionId, label, placeholder, h
   const { t, dispatch, send, stop, answer, reset, conversationId: liveId } = useConversation(room, conversationId, sessionId);
   const info = useClaudeInfo();
   const [prefs, setPrefs] = usePrefs(info?.defaultMode);
-  const [queue, setQueue] = useState<string[]>([]);
+  const [queue, setQueue] = useState<Queued[]>([]);
   const commands = useMemo<Cmd[]>(() => {
     const own = new Set(APP_COMMANDS.map((c) => c.cmd));
     const cli = (info?.commands ?? []).map((c) => ({ cmd: `/${c.name}`, help: c.description })).filter((c) => !own.has(c.cmd));
@@ -71,7 +72,7 @@ export function Console({ room, conversationId, sessionId, label, placeholder, h
     if (t.running || t.pendingPermission || queue.length === 0) return;
     const [next, ...rest] = queue;
     setQueue(rest);
-    void submit(next);
+    void submit(next.text, next.images);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [t.running, t.pendingPermission, queue]);
   const pulled = useMemo(() => pulledAgents(t), [t]);
@@ -164,10 +165,11 @@ export function Console({ room, conversationId, sessionId, label, placeholder, h
     }
   }
 
-  async function submit(text: string) {
+  async function submit(text: string, images: ImageAttachment[] = []) {
     const value = text.trim();
-    if (!value) return;
-    if (t.running) { setQueue((q) => [...q, value]); return; }
+    if (!value && images.length === 0) return;
+    if (t.running) { setQueue((q) => [...q, { text: value, images }]); return; }
+    if (images.length) { stick.current = true; await send(value, { prefs: toRunPrefs(prefs), images }); return; }
     stick.current = true;
     if (value.startsWith("/") && (await runSlash(value))) return;
     if (room === "arena" && /(^|\s)--full\b/.test(value)) {
@@ -190,6 +192,11 @@ export function Console({ room, conversationId, sessionId, label, placeholder, h
       onStop={() => { setQueue([]); stop(); }}
       onCycleMode={cycleMode}
       onUnqueue={(i) => setQueue((q) => q.filter((_, j) => j !== i))}
+      findFiles={async (q) => {
+        const res = await fetch(`/api/files?c=${encodeURIComponent(liveId ?? "")}&q=${encodeURIComponent(q)}`).catch(() => null);
+        return res?.ok ? ((await res.json()) as string[]) : [];
+      }}
+      onError={(message) => dispatch({ type: "error", message })}
       status={<StatusLine label={label} t={t} prefs={prefs} models={info?.models ?? []} onMode={cycleMode} onModel={setModel} onEffort={(effort) => setPrefs({ effort })} />}
     />
   );
@@ -236,7 +243,10 @@ export function Console({ room, conversationId, sessionId, label, placeholder, h
         </ol>
         {t.running && <Spinner active={active} />}
       </div>
-      <div className={styles.dock}>{prompt}</div>
+      <div className={styles.dock}>
+        <TodoPanel todos={t.todos ?? []} />
+        {prompt}
+      </div>
     </div>
   );
 }
@@ -260,10 +270,19 @@ function Markdown({ text }: { text: string }) {
   );
 }
 
-function ItemView({ item, onAnswer, onSkills }: { item: Item; onAnswer: (id: string, d: Decision) => void; onSkills: (names: string[]) => void }) {
+type Answer = (id: string, d: Decision, answers?: Record<string, string>) => void;
+
+function ItemView({ item, onAnswer, onSkills }: { item: Item; onAnswer: Answer; onSkills: (names: string[]) => void }) {
   switch (item.kind) {
     case "user":
-      return <div className={styles.user}><span className={styles.caret} aria-hidden="true">&gt;</span><span className={styles.userText}>{item.text}</span></div>;
+      return (
+        <div className={styles.user}>
+          <span className={styles.caret} aria-hidden="true">&gt;</span>
+          <span className={styles.userText}>
+            {item.images ? <span className={styles.imageTag}>[{item.images} image{item.images > 1 ? "s" : ""}]</span> : null}{item.images && item.text ? " " : ""}{item.text}
+          </span>
+        </div>
+      );
     case "text":
       return (
         <div className={styles.line} data-agent={item.agent ?? "lead"}>
@@ -283,6 +302,7 @@ function ItemView({ item, onAnswer, onSkills }: { item: Item; onAnswer: (id: str
             {item.agent && <span className={styles.via}> · {AGENTS[item.agent].name}</span>}
             {item.status === "running" && <span className={styles.via}> running…</span>}
             {item.status === "stopped" && <span className={styles.via}> stopped</span>}
+            {item.diff && <DiffView diff={item.diff} />}
             {item.preview !== undefined && (
               <details className={styles.result}>
                 <summary><span aria-hidden="true">⎿ </span>{item.status === "error" ? "Error: " : ""}{firstLine(item.preview)}{(item.lines ?? 0) > 1 ? ` (+${(item.lines ?? 1) - 1} lines)` : ""}</summary>
@@ -305,6 +325,8 @@ function ItemView({ item, onAnswer, onSkills }: { item: Item; onAnswer: (id: str
         </div>
       );
     case "permission":
+      if (item.ask === "question") return <QuestionPrompt item={item} onAnswer={onAnswer} />;
+      if (item.ask === "plan") return <PlanPrompt item={item} onAnswer={onAnswer} />;
       return <PermissionPrompt item={item} onAnswer={onAnswer} />;
     case "skills":
       return <SkillCard item={item} onDone={onSkills} />;
@@ -325,7 +347,131 @@ function firstLine(s: string) {
   return line.length > 100 ? `${line.slice(0, 99)}…` : line || "(no output)";
 }
 
-function PermissionPrompt({ item, onAnswer }: { item: Extract<Item, { kind: "permission" }>; onAnswer: (id: string, d: Decision) => void }) {
+const DIFF_LINES = 14;
+
+function DiffView({ diff }: { diff: Diff }) {
+  const lines = (text: string | undefined, sign: "-" | "+") =>
+    (text ?? "").split("\n").slice(0, DIFF_LINES).map((l, i) => (
+      <div key={`${sign}${i}`} className={sign === "-" ? styles.diffDel : styles.diffAdd}><span aria-hidden="true">{sign} </span>{l || " "}</div>
+    ));
+  const more = Math.max(0, (diff.removed ?? "").split("\n").length - DIFF_LINES) + Math.max(0, (diff.added ?? "").split("\n").length - DIFF_LINES);
+  return (
+    <details className={styles.result} open>
+      <summary><span aria-hidden="true">⎿ </span>{diff.removed !== undefined ? "Changes" : "New content"} in {diff.path}</summary>
+      <div className={styles.diff} aria-label={`Diff of ${diff.path}`}>
+        {diff.removed !== undefined && lines(diff.removed, "-")}
+        {lines(diff.added, "+")}
+        {more > 0 && <div className={styles.via}>… {more} more lines</div>}
+      </div>
+    </details>
+  );
+}
+
+function QuestionPrompt({ item, onAnswer }: { item: Extract<Item, { kind: "permission" }>; onAnswer: Answer }) {
+  const questions = item.questions ?? [];
+  const [picked, setPicked] = useState<Record<string, string[]>>({});
+  const [other, setOther] = useState<Record<string, string>>({});
+  const first = useRef<HTMLInputElement>(null);
+  const pending = !item.decision;
+  useEffect(() => { if (pending) first.current?.focus(); }, [pending]);
+
+  if (!pending) {
+    const text = item.decision === "deny" ? "skipped" : Object.entries(item.answers ?? {}).map(([q, a]) => `${q} → ${a}`).join(" · ");
+    return <div className={styles.permDone}><span aria-hidden="true">⎿ </span>Question — {text}</div>;
+  }
+  const answerFor = (q: string) => [...(picked[q] ?? []), ...(other[q]?.trim() ? [other[q].trim()] : [])].join(", ");
+  const ready = questions.every((q) => answerFor(q.question) !== "");
+  const toggle = (q: string, label: string, multi: boolean) =>
+    setPicked((p) => {
+      const cur = p[q] ?? [];
+      return { ...p, [q]: multi ? (cur.includes(label) ? cur.filter((l) => l !== label) : [...cur, label]) : [label] };
+    });
+  const submit = () => {
+    if (!ready) return;
+    onAnswer(item.requestId, "allow", Object.fromEntries(questions.map((q) => [q.question, answerFor(q.question)])));
+  };
+
+  return (
+    <form className={styles.perm} role="group" aria-label="Claude has a question" onSubmit={(e) => { e.preventDefault(); submit(); }}>
+      {questions.map((q, qi) => (
+        <fieldset key={q.question} className={styles.question}>
+          <legend>{q.header && <span className={styles.qHeader}>{q.header}</span>} {q.question}</legend>
+          {q.options.map((o, oi) => (
+            <label key={o.label} className={styles.option}>
+              <input
+                ref={qi === 0 && oi === 0 ? first : undefined}
+                type={q.multiSelect ? "checkbox" : "radio"}
+                name={`q${qi}`}
+                checked={(picked[q.question] ?? []).includes(o.label)}
+                onChange={() => toggle(q.question, o.label, !!q.multiSelect)}
+              />
+              <span>{o.label}{o.description && <span className={styles.via}> — {o.description}</span>}</span>
+            </label>
+          ))}
+          <input
+            className={styles.otherInput}
+            placeholder="Other…"
+            aria-label={`Other answer to: ${q.question}`}
+            value={other[q.question] ?? ""}
+            onChange={(e) => setOther((o) => ({ ...o, [q.question]: e.target.value }))}
+          />
+        </fieldset>
+      ))}
+      <div className={styles.permOptions}>
+        <button type="submit" disabled={!ready}>Answer</button>
+        <button type="button" onClick={() => onAnswer(item.requestId, "deny")}>Skip</button>
+      </div>
+    </form>
+  );
+}
+
+function PlanPrompt({ item, onAnswer }: { item: Extract<Item, { kind: "permission" }>; onAnswer: Answer }) {
+  const first = useRef<HTMLButtonElement>(null);
+  const pending = !item.decision;
+  useEffect(() => { if (pending) first.current?.focus(); }, [pending]);
+  if (!pending) {
+    const text = item.decision === "deny" ? "kept planning" : item.decision === "allow_session" ? "approved, auto-accepting edits" : "approved, edits need approval";
+    return <div className={styles.permDone}><span aria-hidden="true">⎿ </span>Plan — {text}</div>;
+  }
+  const choose = (d: Decision) => onAnswer(item.requestId, d);
+  return (
+    <div
+      className={styles.perm}
+      role="group"
+      aria-label="Claude has a plan"
+      onKeyDown={(e) => {
+        if (e.key === "1") choose("allow_session");
+        else if (e.key === "2") choose("allow");
+        else if (e.key === "3") choose("deny");
+      }}
+    >
+      <div className={styles.permTitle}>Ready to code? Here is Claude&apos;s plan:</div>
+      <div className={styles.planBody}><Markdown text={item.plan || "(The plan is in the transcript above.)"} /></div>
+      <div className={styles.permOptions}>
+        <button ref={first} onClick={() => choose("allow_session")}><kbd>1</kbd> Yes, and auto-accept edits</button>
+        <button onClick={() => choose("allow")}><kbd>2</kbd> Yes, and manually approve edits</button>
+        <button onClick={() => choose("deny")}><kbd>3</kbd> No, keep planning</button>
+      </div>
+    </div>
+  );
+}
+
+function TodoPanel({ todos }: { todos: Todo[] }) {
+  if (!todos.length || todos.every((t) => t.status === "completed")) return null;
+  const glyph = { completed: "☒", in_progress: "◐", pending: "☐" } as const;
+  return (
+    <ul className={styles.todos} aria-label="Todo list">
+      {todos.map((t, i) => (
+        <li key={i} data-status={t.status}>
+          <span aria-hidden="true">{glyph[t.status]}</span> {t.status === "in_progress" && t.activeForm ? t.activeForm : t.content}
+          <span className="sr-only"> ({t.status.replace("_", " ")})</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function PermissionPrompt({ item, onAnswer }: { item: Extract<Item, { kind: "permission" }>; onAnswer: Answer }) {
   const first = useRef<HTMLButtonElement>(null);
   const pending = !item.decision;
   useEffect(() => { if (pending) first.current?.focus(); }, [pending]);
@@ -376,6 +522,22 @@ function Spinner({ active }: { active: AgentId[] }) {
 }
 
 interface Cmd { cmd: string; help: string }
+interface Queued { text: string; images: ImageAttachment[] }
+interface Attachment extends ImageAttachment { url: string }
+
+const IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"];
+
+function readImage(file: File): Promise<Attachment> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const url = String(reader.result);
+      resolve({ mediaType: file.type, data: url.slice(url.indexOf(",") + 1), url });
+    };
+    reader.onerror = () => reject(new Error(`Couldn't read ${file.name || "the image"}.`));
+    reader.readAsDataURL(file);
+  });
+}
 
 function StatusLine({ label, t, prefs, models, onMode, onModel, onEffort }: {
   label: string; t: Transcript; prefs: Prefs; models: ClaudeInfo["models"];
@@ -403,12 +565,55 @@ function StatusLine({ label, t, prefs, models, onMode, onModel, onEffort }: {
   );
 }
 
-function PromptBox({ placeholder, running, locked, commands, queue, onSubmit, onStop, onCycleMode, onUnqueue, status }: {
-  placeholder: string; running: boolean; locked: boolean; commands: Cmd[]; queue: string[];
-  onSubmit: (v: string) => void; onStop: () => void; onCycleMode: () => void; onUnqueue: (i: number) => void; status: ReactNode;
+function PromptBox({ placeholder, running, locked, commands, queue, onSubmit, onStop, onCycleMode, onUnqueue, findFiles, onError, status }: {
+  placeholder: string; running: boolean; locked: boolean; commands: Cmd[]; queue: Queued[];
+  onSubmit: (v: string, images: ImageAttachment[]) => void; onStop: () => void; onCycleMode: () => void; onUnqueue: (i: number) => void;
+  findFiles: (q: string) => Promise<string[]>; onError: (message: string) => void; status: ReactNode;
 }) {
   const [value, setValue] = useState("");
+  const [images, setImages] = useState<Attachment[]>([]);
+  const [mention, setMention] = useState<{ start: number; end: number; query: string } | null>(null);
+  const [files, setFiles] = useState<string[]>([]);
   const ref = useRef<HTMLTextAreaElement>(null);
+
+  // @ mentions: the word being typed at the caret, looked up in the workspace.
+  function trackMention(text: string, caret: number) {
+    const m = /(^|\s)@([^\s@]*)$/.exec(text.slice(0, caret));
+    setMention(m ? { start: caret - m[2].length - 1, end: caret, query: m[2] } : null);
+  }
+  useEffect(() => {
+    if (!mention) { setFiles([]); return; }
+    let alive = true;
+    const t = setTimeout(() => { findFiles(mention.query).then((f) => { if (alive) setFiles(f.slice(0, 12)); }); }, 120);
+    return () => { alive = false; clearTimeout(t); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mention?.query, mention?.start]);
+  function pickFile(file: string) {
+    if (!mention) return;
+    const next = `${value.slice(0, mention.start)}@${file} ${value.slice(mention.end)}`;
+    setValue(next);
+    setMention(null);
+    requestAnimationFrame(() => {
+      const pos = mention.start + file.length + 2;
+      ref.current?.focus();
+      ref.current?.setSelectionRange(pos, pos);
+    });
+  }
+
+  async function addFiles(list: FileList | File[]) {
+    const picked = Array.from(list).filter((f) => IMAGE_TYPES.includes(f.type));
+    if (!picked.length) return false;
+    if (images.length + picked.length > MAX_IMAGES) { onError(`Attach at most ${MAX_IMAGES} images per message.`); return true; }
+    try {
+      const read = await Promise.all(picked.map(readImage));
+      const tooBig = read.find((r) => r.data.length > MAX_IMAGE_B64);
+      if (tooBig) { onError("An image is too large (keep each under about 3.5 MB)."); return true; }
+      setImages((cur) => [...cur, ...read]);
+    } catch (e) {
+      onError(e instanceof Error ? e.message : String(e));
+    }
+    return true;
+  }
   const typed = value.startsWith("/") && !value.includes(" ") ? value.slice(1).toLowerCase() : null;
   const matches = typed === null ? [] : commands
     .filter((c) => c.cmd.slice(1).toLowerCase().startsWith(typed) || (typed.length > 1 && c.cmd.toLowerCase().includes(typed)))
@@ -424,10 +629,13 @@ function PromptBox({ placeholder, running, locked, commands, queue, onSubmit, on
   }, [value]);
 
   function fire() {
-    if (locked || !value.trim()) return;
+    if (locked || (!value.trim() && images.length === 0)) return;
     const v = value;
+    const imgs = images.map(({ mediaType, data }) => ({ mediaType, data }));
     setValue("");
-    onSubmit(v);
+    setImages([]);
+    setMention(null);
+    onSubmit(v, imgs);
   }
 
   return (
@@ -443,17 +651,42 @@ function PromptBox({ placeholder, running, locked, commands, queue, onSubmit, on
           ))}
         </ul>
       )}
-      {queue.length > 0 && (
-        <ul className={styles.queue} aria-label="Queued messages">
-          {queue.map((q, i) => (
-            <li key={i}>
-              <span className={styles.via}>queued</span> <span className={styles.queueText}>{q}</span>
-              <button type="button" onClick={() => onUnqueue(i)} aria-label={`Remove queued message: ${q}`}>×</button>
+      {mention && files.length > 0 && (
+        <ul className={styles.slash} role="listbox" aria-label="Files">
+          {files.map((f) => (
+            <li key={f} role="option" aria-selected={false}>
+              <button type="button" onClick={() => pickFile(f)}>@{f}</button>
             </li>
           ))}
         </ul>
       )}
-      <div className={styles.prompt} data-running={running}>
+      {queue.length > 0 && (
+        <ul className={styles.queue} aria-label="Queued messages">
+          {queue.map((q, i) => (
+            <li key={i}>
+              <span className={styles.via}>queued</span> <span className={styles.queueText}>{q.images.length ? `[${q.images.length} image${q.images.length > 1 ? "s" : ""}] ` : ""}{q.text}</span>
+              <button type="button" onClick={() => onUnqueue(i)} aria-label={`Remove queued message: ${q.text}`}>×</button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {images.length > 0 && (
+        <ul className={styles.attachments} aria-label="Attached images">
+          {images.map((img, i) => (
+            <li key={i}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={img.url} alt={`Attached image ${i + 1}`} />
+              <button type="button" onClick={() => setImages((cur) => cur.filter((_, j) => j !== i))} aria-label={`Remove image ${i + 1}`}>×</button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <div
+        className={styles.prompt}
+        data-running={running}
+        onDragOver={(e) => { if (Array.from(e.dataTransfer.items).some((i) => i.kind === "file")) e.preventDefault(); }}
+        onDrop={(e) => { if (e.dataTransfer.files.length) { e.preventDefault(); void addFiles(e.dataTransfer.files); } }}
+      >
         <span className={styles.caret} aria-hidden="true">&gt;</span>
         <label className="sr-only" htmlFor="prompt-input">Message</label>
         <textarea
@@ -464,17 +697,23 @@ function PromptBox({ placeholder, running, locked, commands, queue, onSubmit, on
           maxLength={100_000}
           placeholder={locked ? "Answer the permission prompt above (1, 2 or 3)" : running ? "Type to queue a message for when Claude finishes" : placeholder}
           disabled={locked}
-          onChange={(e) => setValue(e.target.value)}
+          onChange={(e) => { setValue(e.target.value); trackMention(e.target.value, e.target.selectionStart ?? e.target.value.length); }}
+          onPaste={(e) => {
+            const pasted = Array.from(e.clipboardData.files);
+            if (pasted.some((f) => IMAGE_TYPES.includes(f.type))) { e.preventDefault(); void addFiles(pasted); }
+          }}
           onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); fire(); }
+            if (e.key === "Tab" && !e.shiftKey && mention && files.length > 0) { e.preventDefault(); pickFile(files[0]); }
+            else if (e.key === "Escape" && mention) { setMention(null); }
+            else if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); fire(); }
             else if (e.key === "Tab" && e.shiftKey) { e.preventDefault(); onCycleMode(); }
             else if (e.key === "Tab" && matches.length > 0) { e.preventDefault(); setValue(`${matches[0].cmd} `); }
           }}
         />
-        {running && !value.trim() ? (
+        {running && !value.trim() && images.length === 0 ? (
           <button type="button" className={styles.sendButton} onClick={onStop} aria-label="Stop (Esc)">■</button>
         ) : (
-          <button type="submit" className={styles.sendButton} disabled={!value.trim() || locked} aria-label={running ? "Queue" : "Send"}>↵</button>
+          <button type="submit" className={styles.sendButton} disabled={(!value.trim() && images.length === 0) || locked} aria-label={running ? "Queue" : "Send"}>↵</button>
         )}
       </div>
       {status}

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import type { Decision } from "@/harness/events";
 import type { RunPrefs } from "@/harness/controls";
+import type { ImageAttachment } from "@/harness/images";
 import type { RoomId } from "@/harness/rooms";
 import { roomHref, SESSIONS_CHANGED } from "@/components/shell/Sidebar";
 import { initialTranscript, parseSse, reduce, type Action, type Transcript } from "./transcript";
@@ -88,7 +89,7 @@ export function useConversation(room: RoomId, initialId?: string, sessionId?: st
     return () => window.removeEventListener("gabo:new", reset);
   }, [reset]);
 
-  const send = useCallback(async (prompt: string, opts: { full?: boolean; prefs?: RunPrefs } = {}) => {
+  const send = useCallback(async (prompt: string, opts: { full?: boolean; prefs?: RunPrefs; images?: ImageAttachment[] } = {}) => {
     if (busy.current) return;
     busy.current = true;
     const gen = generation.current;
@@ -98,7 +99,7 @@ export function useConversation(room: RoomId, initialId?: string, sessionId?: st
       setConversationId(id);
       history.replaceState(null, "", roomHref(room, id));
     }
-    live({ type: "user_prompt", text: prompt });
+    live({ type: "user_prompt", text: prompt, ...(opts.images?.length ? { images: opts.images.length } : {}) });
     const ctrl = new AbortController();
     abortRef.current = ctrl;
     let announced = false;
@@ -106,7 +107,7 @@ export function useConversation(room: RoomId, initialId?: string, sessionId?: st
       const res = await fetch("/api/run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ conversationId: id, room, prompt, full: opts.full === true, prefs: opts.prefs }),
+        body: JSON.stringify({ conversationId: id, room, prompt, full: opts.full === true, prefs: opts.prefs, ...(opts.images?.length ? { images: opts.images } : {}) }),
         signal: ctrl.signal,
       });
       if (!res.ok || !res.body) {
@@ -152,12 +153,12 @@ export function useConversation(room: RoomId, initialId?: string, sessionId?: st
 
   const stop = useCallback(() => abortRef.current?.abort(), []);
 
-  const answer = useCallback(async (requestId: string, decision: Decision) => {
-    dispatch({ type: "permission_resolved", requestId, decision });
+  const answer = useCallback(async (requestId: string, decision: Decision, answers?: Record<string, string>) => {
+    dispatch({ type: "permission_resolved", requestId, decision, ...(answers ? { answers } : {}) });
     const res = await fetch("/api/permission", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ requestId, decision }),
+      body: JSON.stringify({ requestId, decision, ...(answers ? { answers } : {}) }),
     }).catch(() => null);
     if (!res?.ok) dispatch({ type: "notice", text: "That permission request had already expired, so it was denied." });
   }, []);

@@ -3,7 +3,16 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import type { Decision } from "./events";
 
-export interface PermissionAsk { tool: string; summary: string; input: Record<string, unknown> }
+import type { AskKind, Question } from "./events";
+
+export interface PermissionAsk {
+  tool: string;
+  summary: string;
+  input: Record<string, unknown>;
+  kind?: AskKind;
+  questions?: Question[];
+  plan?: string;
+}
 
 interface Pending { runId: string; resolve: (d: Decision) => void; timer: ReturnType<typeof setTimeout> }
 
@@ -43,9 +52,11 @@ export class PermissionBroker {
   }
 }
 
-const g = globalThis as unknown as { __gaboBroker?: PermissionBroker };
+const g = globalThis as unknown as { __gaboBroker?: PermissionBroker; __gaboAnswers?: Map<string, Record<string, string>> };
 /** One broker per server process; survives Next dev hot reloads. */
 export const broker = (g.__gaboBroker ??= new PermissionBroker());
+/** Gab's answers to AskUserQuestion, keyed by request id, picked up by canUseTool when the request resolves. */
+export const pendingAnswers = (g.__gaboAnswers ??= new Map<string, Record<string, string>>());
 
 const PATH_KEYS = ["file_path", "notebook_path", "path"] as const;
 

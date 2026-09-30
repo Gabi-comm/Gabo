@@ -5,17 +5,22 @@ export type Decision = "allow" | "allow_session" | "deny";
 export interface SkillLine { agent: AgentId; skills: string[]; why: string }
 export interface SkillRec { name: string; description: string; agents: AgentId[] }
 
+export interface Todo { content: string; status: "pending" | "in_progress" | "completed"; activeForm?: string }
+export interface Diff { path: string; removed?: string; added?: string }
+export interface Question { question: string; header?: string; multiSelect?: boolean; options: { label: string; description?: string }[] }
+export type AskKind = "tool" | "question" | "plan";
+
 /** Everything the browser receives over the run stream. */
 export type UiEvent =
   | { type: "session"; sessionId: string; model: string; cwd: string }
   | { type: "text"; delta: string; agent: AgentId | null }
-  | { type: "tool_start"; id: string; name: string; summary: string; agent: AgentId | null }
+  | { type: "tool_start"; id: string; name: string; summary: string; agent: AgentId | null; todos?: Todo[]; diff?: Diff }
   | { type: "tool_result"; id: string; ok: boolean; preview: string; lines: number }
   | { type: "agent_start"; agent: AgentId; toolUseId: string; description: string }
   | { type: "agent_progress"; agent: AgentId; summary: string }
   | { type: "agent_stop"; agent: AgentId; toolUseId: string; ok: boolean }
-  | { type: "permission_request"; requestId: string; tool: string; summary: string }
-  | { type: "permission_resolved"; requestId: string; decision: Decision }
+  | { type: "permission_request"; requestId: string; tool: string; summary: string; kind?: AskKind; questions?: Question[]; plan?: string }
+  | { type: "permission_resolved"; requestId: string; decision: Decision; answers?: Record<string, string> }
   | { type: "skills"; lines: SkillLine[]; missing: SkillRec[]; note?: string }
   | { type: "result"; ok: boolean; costUsd: number; inputTokens: number; outputTokens: number; durationMs: number }
   | { type: "error"; message: string; hint?: string }
@@ -40,6 +45,22 @@ export function summarizeTool(name: string, input: Record<string, unknown>): str
     input.command ?? input.file_path ?? input.notebook_path ?? input.pattern ?? input.url ?? input.query ??
     input.skill ?? input.description ?? "";
   return arg === "" ? name : `${name}(${clip(String(arg))})`;
+}
+
+const DIFF_CHARS = 2000;
+const cut = (s: unknown) => (typeof s === "string" ? (s.length > DIFF_CHARS ? `${s.slice(0, DIFF_CHARS)}\n…` : s) : undefined);
+
+/** A short before/after for file edits, shown under the tool line like the CLI's diff. */
+function diffOf(name: string, input: Record<string, unknown>): Diff | undefined {
+  const file = typeof input.file_path === "string" ? input.file_path : undefined;
+  if (!file) return undefined;
+  if (name === "Edit") return { path: file, removed: cut(input.old_string), added: cut(input.new_string) };
+  if (name === "Write") return { path: file, added: cut(input.content) };
+  if (name === "MultiEdit" && Array.isArray(input.edits)) {
+    const edits = input.edits as { old_string?: string; new_string?: string }[];
+    return { path: file, removed: cut(edits.map((e) => e.old_string ?? "").join("\n⋯\n")), added: cut(edits.map((e) => e.new_string ?? "").join("\n⋯\n")) };
+  }
+  return undefined;
 }
 
 function resultText(content: unknown): string {
@@ -108,8 +129,11 @@ export function createMapper() {
             if ((name === "Agent" || name === "Task") && isAgentId(input.subagent_type)) {
               subagentByToolUse.set(id, input.subagent_type);
               out.push({ type: "agent_start", agent: input.subagent_type, toolUseId: id, description: String(input.description ?? "") });
+            } else if (name === "TodoWrite" && Array.isArray(input.todos)) {
+              out.push({ type: "tool_start", id, name, summary: "Update Todos", agent, todos: input.todos as Todo[] });
             } else {
-              out.push({ type: "tool_start", id, name, summary: summarizeTool(name, input), agent });
+              const diff = diffOf(name, input);
+              out.push({ type: "tool_start", id, name, summary: summarizeTool(name, input), agent, ...(diff ? { diff } : {}) });
             }
           }
         }

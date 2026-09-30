@@ -3,7 +3,8 @@ import os from "node:os";
 import path from "node:path";
 import { SessionStore } from "./sessions";
 
-export const DATA_DIR = path.join(process.cwd(), ".data");
+// Fake mode (e2e) keeps its own data so tests never touch real chats, and can be wiped per run.
+export const DATA_DIR = path.join(process.cwd(), process.env.HARNESS_FAKE === "1" ? ".data-fake" : ".data");
 export const DEFAULT_WORKSPACE = path.join(os.homedir(), "Documents", "Gabo Workspace");
 const CONFIG_FILE = path.join(DATA_DIR, "config.json");
 
