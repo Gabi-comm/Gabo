@@ -24,9 +24,10 @@ const continuedTitle = (t: string) => `${t.replace(/ \(continued\)$/, "")} (cont
 export async function continueInNewSession(conversationId: string, signal?: AbortSignal): Promise<NewSessionResult> {
   const record = sessions.get(conversationId);
   if (!record) throw new NewSessionError("That chat doesn't exist anymore.", 404);
-  if (!record.sdkSessionId) throw new NewSessionError("Send a message first; there's nothing to carry over yet.", 400);
+  // Fake runs never record a Claude Code session, so fake mode copies the chat id instead.
+  if (!record.sdkSessionId && !FAKE) throw new NewSessionError("Send a message first; there's nothing to carry over yet.", 400);
 
-  const sdkSessionId = FAKE ? `${FAKE_COMPACT_PREFIX}${record.sdkSessionId}` : await forkAndCompact(record, signal);
+  const sdkSessionId = FAKE ? `${FAKE_COMPACT_PREFIX}${record.sdkSessionId ?? record.id}` : await forkAndCompact(record, signal);
   const next = sessions.upsert({
     id: randomUUID(),
     room: record.room,

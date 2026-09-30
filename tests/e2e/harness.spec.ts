@@ -278,6 +278,33 @@ test("Recents lists Claude Code history; opening a CLI session shows its transcr
   await expect(page.getByText("Done. Fake run finished.")).toBeVisible({ timeout: 20_000 });
 });
 
+test("New Session under the prompt compacts a copy of the chat into a new chat that continues from the summary", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByRole("button", { name: "New Session" })).toHaveCount(0);
+  await page.locator("#prompt-input").fill("first chat about budgets");
+  await page.keyboard.press("Enter");
+  await expect(page.getByText("Done. Fake run finished.")).toBeVisible({ timeout: 20_000 });
+  const oldUrl = page.url();
+  await expect(page.getByText("Continue in a fresh chat")).toHaveCount(0);
+  await page.getByRole("button", { name: "New Session" }).click();
+  await expect(page).not.toHaveURL(oldUrl);
+  await expect(page).toHaveURL(/\?c=/);
+  const carried = page.getByText(/Carried over from “first chat about budgets”/);
+  await expect(carried).toBeVisible();
+  await carried.click();
+  await expect(page.getByText("Nothing is pending.")).toBeVisible();
+  await page.getByRole("button", { name: /^History/ }).click();
+  await expect(page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: /first chat about budgets \(continued\)/ }).first()).toBeVisible();
+  // The new chat keeps going.
+  await page.locator("#prompt-input").fill("carry on");
+  await page.keyboard.press("Enter");
+  await expect(page.getByText("Done. Fake run finished.")).toBeVisible({ timeout: 20_000 });
+  // The original chat is untouched.
+  await page.goto(oldUrl);
+  await expect(page.locator('ol[aria-live="polite"]').getByText("first chat about budgets").first()).toBeVisible();
+  await expect(page.getByText(/Carried over/)).toHaveCount(0);
+});
+
 test("status line: Shift+Tab cycles permission mode; model and effort reach the run", async ({ page }) => {
   await page.goto("/");
   await page.evaluate(() => localStorage.removeItem("gabo:prefs"));

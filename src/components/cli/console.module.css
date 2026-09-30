@@ -203,3 +203,12 @@
 
 .localBadge { color: var(--ok); font-size: 12px; border: 1px solid color-mix(in srgb, var(--ok) 45%, transparent); border-radius: 6px; padding: 0 6px; }
 .localBadge:hover { background: var(--surface); }
+
+.summary { border: 1px solid var(--line); border-radius: var(--radius); padding: 8px 12px; color: var(--muted); }
+.summary > summary { cursor: pointer; color: var(--text); }
+.summary[open] > summary { margin-bottom: 6px; }
+.statusEnd { margin-left: auto; display: inline-flex; align-items: center; gap: 10px; }
+.statusEnd .statusHint { margin-left: 0; }
+.newSession { background: var(--surface); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 1px 8px; font: inherit; font-size: 12px; }
+.newSession:hover:not(:disabled) { border-color: var(--blue-text); }
+.newSession:disabled { opacity: 0.5; cursor: default; }

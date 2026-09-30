@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useRouter } from "next/navigation";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { AgentKey } from "@/harness/agents";
@@ -9,6 +10,7 @@ import { rosterFor, type RoomId } from "@/harness/rooms";
 import { Mascot } from "@/components/mascot/Mascot";
 import { activeAgents, pulledAgents, type Item, type Transcript } from "./transcript";
 import { useConversation } from "./useConversation";
+import { SESSIONS_CHANGED } from "@/components/shell/Sidebar";
 import { SkillCard } from "./SkillCard";
 import { AgentMascot, useAgentMeta } from "@/components/agents/registry";
 import type { AgentInfo } from "@/harness/agentMeta";
@@ -56,6 +58,26 @@ export function Console({ room, conversationId, sessionId, team, label, placehol
   const meta = useAgentMeta();
   const [prefs, setPrefs] = usePrefs(info?.defaultMode);
   const [queue, setQueue] = useState<Queued[]>([]);
+  const router = useRouter();
+  const [compacting, setCompacting] = useState(false);
+  // "New session": /compact a copy of this chat and continue in it; this chat stays as it is.
+  async function newSession() {
+    if (!liveId || compacting || t.running) return;
+    setCompacting(true);
+    try {
+      const res = await fetch("/api/sessions/continue", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ conversationId: liveId }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error ?? `The server answered ${res.status}.`);
+      window.dispatchEvent(new Event(SESSIONS_CHANGED));
+      router.push(body.href);
+    } catch (e) {
+      dispatch({ type: "error", message: `Couldn't start a new session: ${e instanceof Error ? e.message : String(e)}` });
+    } finally {
+      setCompacting(false);
+    }
+  }
   const [inputHistory, setInputHistory] = useState<string[]>([]);
   useEffect(() => {
     try { setInputHistory(JSON.parse(localStorage.getItem(INPUT_HISTORY_KEY) ?? "[]")); } catch { /* storage blocked */ }
@@ -222,7 +244,8 @@ export function Console({ room, conversationId, sessionId, team, label, placehol
         return res?.ok ? ((await res.json()) as string[]) : [];
       }}
       onError={(message) => dispatch({ type: "error", message })}
-      status={<StatusLine label={label} t={t} prefs={prefs} local={local?.enabled ? local.model : null} models={info?.models ?? []} onMode={cycleMode} onModel={setModel} onEffort={(effort) => setPrefs({ effort })} />}
+      status={<StatusLine label={label} t={t} prefs={prefs} local={local?.enabled ? local.model : null} models={info?.models ?? []} onMode={cycleMode} onModel={setModel} onEffort={(effort) => setPrefs({ effort })}
+        newSession={started && liveId ? <NewSessionButton busy={compacting} disabled={t.running} onClick={newSession} /> : null} />}
     />
   );
 
@@ -364,6 +387,13 @@ function ItemView({ item, meta, onAnswer, onSkills }: { item: Item; meta: Meta; 
       );
     case "notice":
       return <pre className={styles.notice}>{item.text}</pre>;
+    case "summary":
+      return (
+        <details className={styles.summary}>
+          <summary>Carried over{item.from ? ` from “${item.from}”` : ""}: the /compact summary Claude continues from</summary>
+          <Markdown text={item.text} />
+        </details>
+      );
   }
 }
 
@@ -567,9 +597,24 @@ function readImage(file: File): Promise<Attachment> {
   });
 }
 
-function StatusLine({ label, t, prefs, local, models, onMode, onModel, onEffort }: {
+function NewSessionButton({ busy, disabled, onClick }: { busy: boolean; disabled: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      className={styles.newSession}
+      onClick={onClick}
+      disabled={busy || disabled}
+      aria-busy={busy}
+      title={busy ? "Claude reads this chat once to summarise it." : "Runs /compact on a copy of this chat and opens it as a new chat. This chat stays as it is."}
+    >
+      {busy ? "Compacting…" : "New Session"}
+    </button>
+  );
+}
+
+function StatusLine({ label, t, prefs, local, models, onMode, onModel, onEffort, newSession }: {
   label: string; t: Transcript; prefs: Prefs; local: string | null; models: ClaudeInfo["models"];
-  onMode: () => void; onModel: (m: string) => void; onEffort: (e: Prefs["effort"]) => void;
+  onMode: () => void; onModel: (m: string) => void; onEffort: (e: Prefs["effort"]) => void; newSession?: ReactNode;
 }) {
   const cwd = t.cwd ? t.cwd.replace(/^.*[\\/](?=[^\\/]+[\\/]?$)/, "…/") : "";
   return (
@@ -589,7 +634,10 @@ function StatusLine({ label, t, prefs, local, models, onMode, onModel, onEffort 
       <span>{label}</span>
       {cwd && <span title={t.cwd}>{cwd}</span>}
       {t.tokens > 0 && <span>{t.tokens >= 1000 ? `${(t.tokens / 1000).toFixed(1)}k` : t.tokens} tok</span>}
-      <span className={styles.statusHint}>/ commands · Shift+Tab mode</span>
+      <span className={styles.statusEnd}>
+        {newSession}
+        <span className={styles.statusHint}>/ commands · Shift+Tab mode</span>
+      </span>
     </div>
   );
 }

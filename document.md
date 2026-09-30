@@ -78,6 +78,10 @@ Every agent follows the **skill rule**: on the first message of a chat it keeps 
 - **Effort**: auto, low, medium, high, xhigh, max.
 - Also shown: the room, the working folder and the tokens used. Your choices are remembered in this browser.
 
+### New Session (status line, left of "/ commands")
+
+Shows once a chat has messages. It copies the chat's Claude Code session, runs `/compact` on the copy, and opens the copy as a **new chat** titled "… (continued)". The new chat starts with a collapsible **Carried over** block (the `/compact` summary Claude continues from), and its next messages resume from that summary instead of re-reading the whole old conversation. The original chat stays exactly as it was. Compacting reads the old chat once (on your default model), so use it on a long chat before it gets expensive; after that every message is cheap again.
+
 ### Typing `/`
 
 A menu lists **every command**: the app's own plus all of Claude Code's (your plugins, your skills, and built-ins like `/compact`, `/context`, `/init`, `/review`). Use ↑/↓ to scroll it, Enter to run, Tab to complete.

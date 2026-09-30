@@ -66,4 +66,13 @@ describe("CLI-default settings", () => {
     const opts = buildOptions({ room: "home", workspace: path.resolve("/w"), spec: loadSpec(path.resolve(__dirname, "../..")) });
     expect(opts.settingSources).toBeUndefined();
   });
+
+  it("shows a /compact summary as a carried-over block, not as something Gab typed", () => {
+    const items = historyToItems([
+      msg("user", "This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.\n\nSummary:\n1. Built the login page."),
+      msg("user", "next, add tests"),
+    ] as never);
+    expect(items[0]).toEqual({ kind: "summary", text: "Summary:\n1. Built the login page." });
+    expect(items[1]).toEqual({ kind: "user", text: "next, add tests" });
+  });
 });
