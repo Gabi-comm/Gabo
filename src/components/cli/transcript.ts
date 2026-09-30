@@ -21,6 +21,8 @@ export interface Transcript {
   cwd: string;
   tokens: number;
   costUsd: number;
+  /** Permission mode Claude Code last reported (e.g. after a plan is approved). */
+  mode?: string;
 }
 
 export type Action =
@@ -62,6 +64,8 @@ export function reduce(t: Transcript, a: Action): Transcript {
       return { ...a.state, running: false, pendingPermission: null };
     case "session":
       return { ...t, model: a.model, cwd: a.cwd };
+    case "mode":
+      return { ...t, mode: a.mode };
     case "text": {
       const last = t.items.at(-1);
       if (last?.kind === "text" && last.agent === a.agent) {

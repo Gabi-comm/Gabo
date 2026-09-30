@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import type { Decision } from "@/harness/events";
+import type { RunPrefs } from "@/harness/controls";
 import type { RoomId } from "@/harness/rooms";
 import { roomHref, SESSIONS_CHANGED } from "@/components/shell/Sidebar";
 import { initialTranscript, parseSse, reduce, type Action, type Transcript } from "./transcript";
@@ -87,7 +88,7 @@ export function useConversation(room: RoomId, initialId?: string, sessionId?: st
     return () => window.removeEventListener("gabo:new", reset);
   }, [reset]);
 
-  const send = useCallback(async (prompt: string, opts: { full?: boolean } = {}) => {
+  const send = useCallback(async (prompt: string, opts: { full?: boolean; prefs?: RunPrefs } = {}) => {
     if (busy.current) return;
     busy.current = true;
     const gen = generation.current;
@@ -105,7 +106,7 @@ export function useConversation(room: RoomId, initialId?: string, sessionId?: st
       const res = await fetch("/api/run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ conversationId: id, room, prompt, full: opts.full === true }),
+        body: JSON.stringify({ conversationId: id, room, prompt, full: opts.full === true, prefs: opts.prefs }),
         signal: ctrl.signal,
       });
       if (!res.ok || !res.body) {
