@@ -43,7 +43,7 @@ function clip(s: string, n = 80): string {
 export function summarizeTool(name: string, input: Record<string, unknown>): string {
   const arg =
     input.command ?? input.file_path ?? input.notebook_path ?? input.pattern ?? input.url ?? input.query ??
-    input.skill ?? input.description ?? "";
+    input.skill ?? input.description ?? input.prompt ?? "";
   return arg === "" ? name : `${name}(${clip(String(arg))})`;
 }
 
