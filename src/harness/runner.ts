@@ -12,12 +12,13 @@ import { loadSpec, type ParsedSpec } from "./spec";
 import { loadOverrides, type AgentOverride, type Overrides } from "./overrides";
 import type { RunPrefs } from "./controls";
 import { isLocalOn, localEnv, type LocalLlmConfig } from "./localLlm";
+import { blockedTools, leadDefaults, profileFor, type BudgetMode } from "./budget";
 import { summarizeTool } from "./events";
 import { QUICK_AGENTS, arenaSizeGuard, detectPython, ensureIdeaArena, withIdeaRubric } from "./arena";
 
 export const SKILL_READ_ROOTS = [path.join(os.homedir(), ".claude", "skills")];
 
-function agentPrompt(id: AgentKey, spec: ParsedSpec, overrides: Overrides, customs: CustomAgent[]): string | null {
+function agentPrompt(id: AgentKey, spec: ParsedSpec, overrides: Overrides, customs: CustomAgent[], skills: string[], words: number): string | null {
   let parts: string[];
   if (isAgentId(id)) {
     const override: AgentOverride | undefined = overrides[id];
@@ -30,7 +31,11 @@ function agentPrompt(id: AgentKey, spec: ParsedSpec, overrides: Overrides, custo
     parts = [`You are ${custom.name}, an agent Gab made. Your role:`, custom.prompt];
     if (custom.goal) parts.push(`Gab's added goal for you: ${custom.goal}`);
   }
-  parts.push("Skill rule (applies to you):", spec.skillScout);
+  // The server-side scout already applied the spec's skill rule; agents only get the result (no repo browsing).
+  parts.push(skills.length
+    ? `Skills picked for you: ${skills.join(", ")}. Load one with the Skill tool only when the task needs it.`
+    : "No extra skills were picked for this task.");
+  parts.push(`Output budget: at most ${words} words, in the sections your role asks for. The lead passes your output on as-is, so don't restate the task or repeat what others said.`);
   return parts.join("\n\n");
 }
 
@@ -60,20 +65,28 @@ export interface BuildOptionsInput {
   mcpServers?: Record<string, McpServerConfig>;
   /** "Switch to Local LLM": when on, everything runs on this Ollama model instead of the Claude plan. */
   local?: LocalLlmConfig;
+  /** Economy / Balanced / Max quality: picks every agent's model and effort (docs/token-budget.md). */
+  budget?: BudgetMode;
 }
 
 /** Everything a room run passes to query(), minus the live callbacks. */
-export function buildOptions({ room, workspace, spec, sessionId, skillsByAgent = {}, team, customAgents = [], extraWorkflow, overrides = {}, prefs = {}, mcpServers, local }: BuildOptionsInput): Options {
+export function buildOptions({ room, workspace, spec, sessionId, skillsByAgent = {}, team, customAgents = [], extraWorkflow, overrides = {}, prefs = {}, mcpServers, local, budget = "balanced" }: BuildOptionsInput): Options {
   const localOn = isLocalOn(local);
+  const lead = leadDefaults(budget);
   const agents: Record<string, AgentDefinition> = {};
   for (const id of rosterFor(room, team)) {
-    const prompt = agentPrompt(id, spec, overrides, customAgents);
+    const custom = customAgents.find((c) => c.id === id);
+    const profile = profileFor(id, budget, isAgentId(id) ? overrides[id] ?? {} : { model: custom?.model, effort: custom?.effort });
+    const prompt = agentPrompt(id, spec, overrides, customAgents, skillsByAgent[id] ?? [], profile.words);
     if (!prompt) continue; // a custom agent that was deleted since the chat started
+    const blocked = blockedTools(profile.tools);
     agents[id] = {
       description: describeAgent(id, customAgents),
       prompt,
-      ...(localOn ? { model: local.model } : {}),
-      ...(skillsByAgent[id]?.length ? { skills: skillsByAgent[id] } : {}),
+      model: localOn ? local.model : profile.model,
+      effort: profile.effort as AgentDefinition["effort"],
+      maxTurns: profile.maxTurns,
+      ...(blocked ? { disallowedTools: blocked } : {}),
     };
   }
   const env: Record<string, string | undefined> = { ...process.env };
@@ -87,12 +100,13 @@ export function buildOptions({ room, workspace, spec, sessionId, skillsByAgent =
     resume: sessionId,
     includePartialMessages: true,
     forwardSubagentText: true,
-    agentProgressSummaries: true,
+    // Cosmetic one-line progress notes cost extra background model calls; off by default.
+    agentProgressSummaries: false,
     // settingSources omitted = everything the CLI loads: user, project and local settings, CLAUDE.md, plugins, MCP.
     permissionMode: prefs.mode ?? "default",
     ...(mcpServers && Object.keys(mcpServers).length ? { mcpServers } : {}),
-    ...(localOn ? { model: local.model } : prefs.model ? { model: prefs.model } : {}),
-    ...(prefs.effort ? { effort: prefs.effort } : {}),
+    model: localOn ? local.model : prefs.model || lead.model,
+    effort: prefs.effort || lead.effort,
     systemPrompt: {
       type: "preset",
       preset: "claude_code",

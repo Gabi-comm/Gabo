@@ -17,9 +17,12 @@ Start it with `npm run dev`, then open http://127.0.0.1:3217. It only answers on
 | **Workspace ▸ Arena** `/arena` | Brainstorming and picking the best idea: Emperor (runs the idea-arena with the Idea Rubric), Believer, Skeptic, Investor, Judge, Caveman. The agents spar in an arena. |
 | **Workspace ▸ Hackathon** `/hackathon` | Building and shipping: Planner, Designer, Coder, Tester, Investor, Caveman. The agents type at desks. |
 | **Workspace ▸ Laboratory** `/laboratory` | **You pick the team.** Tick the agents (built-in and your own) to include; the Caveman is always in. Their mascots load above the prompt box, and the chat runs with exactly that team. "Change team" before the first message; **New** starts over. |
-| **Status** `/status` | Claude Code's version (the one Gabo uses and the CLI on your PATH), the Agent SDK version, default model, models, permission mode, your account and plan, connectivity (Claude Code login, the Anthropic API, Anthropic's status page), every MCP server with its status, your plugins, other AIs, the workspace, and Python for the Arena. **Refresh** re-checks. |
+| **Local LLM** `/local-llm` | **Switch to Local LLM**: a step-by-step Ollama guide, live Ollama status, a model picker with **Test model**, a **Pull** box with progress, and a switch. When it's on, every agent and subagent runs on that local model instead of your Claude plan. The status line then shows `local · <model>`. Switch back any time. |
+| **About** `/about` | What Gabo is, where each page goes, and its principles. |
+| **Status** `/status` | **Usage**: your plan meters from Claude Code's `/usage` (5-hour session and week, with reset times, no tokens spent), plan-limit reports from runs, and Gabo's own log (runs and tokens for today and the last 7 days, by room and by model). Also which backend is in use (Claude plan or local model), and Claude Code's version (the one Gabo uses and the CLI on your PATH), the Agent SDK version, default model, models, permission mode, your account and plan, connectivity (Claude Code login, the Anthropic API, Anthropic's status page), every MCP server with its status, your plugins, other AIs, the workspace, and Python for the Arena. **Refresh** re-checks. |
 | **Plugins** `/plugins` | Connect other AIs (ChatGPT, Gemini, OpenClaw, Hermes, or any OpenAI-compatible server) so Claude can consult them. Also lists your Claude Code plugins and MCP servers with their status. |
 | **History** (dropdown) | Your whole Claude Code history, CLI and app sessions from every project, newest first, labelled by folder. It remembers whether it's open. |
+| **Pinned** | Pin any chat with the pin button on its row (it shows on hover). Pinned chats stay at the top of the sidebar, even when History is collapsed, and survive reloads. Unpin with the same button. |
 | **Settings → Agents** `/settings` | Edit each built-in agent's role prompt and add a goal. Saved to `config/agent-overrides.json`; the text in `docs/spec.md` stays the default, so "Reset to spec" can restore it. |
 | **Settings → Add agent** `/settings?tab=new` | Make your own agent: name, one-liner, **mascot** (describe it and press **Generate mascot**, press **Randomize costume**, or pick each part: body colour, hat, face, holding, clothes, back), **system prompt**, **goal**, and **background** (pick one, or **Generate background** from the prompt and goal). A live preview shows it on its stage. Saved to `config/custom-agents.json`. Edit or delete it later from the same tab. |
 
@@ -176,7 +179,7 @@ Plain `http://` is only allowed to this machine, so keys never cross the network
 | `docs/spec.md` | The original request, verbatim. Agent role prompts are read from here. |
 | `config/agent-overrides.json` | Your prompt and goal edits from Settings. Tracked in git. |
 | `config/custom-agents.json` | The agents you made (prompt, goal, costume, background). Tracked in git. |
-| `.data/` | Chats, the workspace setting, provider keys, the skills cache. Local only, git-ignored. |
+| `.data/` | Chats, pins, the workspace setting, provider keys, the local-LLM setting, the usage log, the skills cache. Local only, git-ignored. |
 | `vendor/idea-arena/` | The arena skill (Jakeschincariol/arena-skill, pinned). |
 
 ## Development

@@ -10,11 +10,14 @@ export interface CustomAgent {
   goal: string;
   costume: Costume;
   backdrop: BackdropTheme;
+  /** Optional model / effort; otherwise the recommended default for a new agent (Sonnet, medium). */
+  model?: string;
+  effort?: string;
   createdAt: number;
   updatedAt: number;
 }
 
-export type CustomAgentDraft = Pick<CustomAgent, "name" | "tagline" | "prompt" | "goal" | "costume" | "backdrop">;
+export type CustomAgentDraft = Pick<CustomAgent, "name" | "tagline" | "prompt" | "goal" | "costume" | "backdrop" | "model" | "effort">;
 
 export const LIMITS = { name: 30, tagline: 120, prompt: 20_000, goal: 4_000 };
 
@@ -45,5 +48,7 @@ export function validateCustomAgent(raw: unknown, others: { id: string; name: st
   if (prompt.length > LIMITS.prompt) return { ok: false, error: `The role is too long (max ${LIMITS.prompt.toLocaleString()} characters).` };
   if (goal.length > LIMITS.goal) return { ok: false, error: `The goal is too long (max ${LIMITS.goal.toLocaleString()} characters).` };
   const backdrop = (BACKDROP_THEMES as readonly string[]).includes(r.backdrop as string) ? (r.backdrop as BackdropTheme) : "sunrise";
-  return { ok: true, value: { name, tagline, prompt, goal, costume: sanitizeCostume(r.costume), backdrop } };
+  const model = typeof r.model === "string" && /^[\w.:\-[\]]{1,80}$/.test(r.model) ? r.model : undefined;
+  const effort = typeof r.effort === "string" && ["low", "medium", "high", "xhigh", "max"].includes(r.effort) ? r.effort : undefined;
+  return { ok: true, value: { name, tagline, prompt, goal, costume: sanitizeCostume(r.costume), backdrop, ...(model ? { model } : {}), ...(effort ? { effort } : {}) } };
 }

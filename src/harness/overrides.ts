@@ -8,6 +8,9 @@ export interface AgentOverride {
   prompt?: string;
   /** Appended to the prompt as "Gab's added goal for you: …". */
   goal?: string;
+  /** Replaces the recommended model / effort for this agent (docs/token-budget.md). */
+  model?: string;
+  effort?: string;
   updatedAt?: number;
 }
 
@@ -38,19 +41,26 @@ function write(file: string, all: Overrides): void {
 }
 
 /** Saves the given fields; an empty or blank value clears that field. */
-export function saveOverride(file: string, id: AgentId, patch: { prompt?: string; goal?: string }): AgentOverride | undefined {
+export function saveOverride(file: string, id: AgentId, patch: { prompt?: string; goal?: string; model?: string; effort?: string }): AgentOverride | undefined {
   if (!isAgentId(id)) throw new Error(`Unknown agent: ${String(id)}`);
   if (patch.prompt !== undefined && patch.prompt.length > MAX_PROMPT) throw new Error(`The prompt is too long (max ${MAX_PROMPT.toLocaleString()} characters).`);
   if (patch.goal !== undefined && patch.goal.length > MAX_GOAL) throw new Error(`The goal is too long (max ${MAX_GOAL.toLocaleString()} characters).`);
   const all = loadOverrides(file);
   const next: AgentOverride = { ...all[id] };
+  for (const key of ["model", "effort"] as const) {
+    if (patch[key] === undefined) continue;
+    const v = patch[key]!.trim();
+    if (!v) delete next[key];
+    else if (key === "model" ? /^[\w.:\-[\]]{1,80}$/.test(v) : ["low", "medium", "high", "xhigh", "max"].includes(v)) next[key] = v;
+    else throw new Error(`Bad ${key}: ${v}`);
+  }
   for (const key of ["prompt", "goal"] as const) {
     if (patch[key] === undefined) continue;
     const value = patch[key]!.trim();
     if (value) next[key] = patch[key]!.replace(/\r\n/g, "\n").trim();
     else delete next[key];
   }
-  if (next.prompt === undefined && next.goal === undefined) {
+  if (next.prompt === undefined && next.goal === undefined && next.model === undefined && next.effort === undefined) {
     delete all[id];
     write(file, all);
     return undefined;

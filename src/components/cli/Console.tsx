@@ -175,7 +175,11 @@ export function Console({ room, conversationId, sessionId, team, label, placehol
         return true;
       }
       default:
-        if (cliCommands.has(cmd) || !info) return false; // Claude Code runs it
+        {
+          // The command list may still be loading: wait for it rather than guess.
+          const known = info ?? (await fetchClaudeInfo());
+          if (!known || known.commands.some((c) => `/${c.name}` === cmd)) return false; // Claude Code runs it
+        }
         if (cmd.startsWith("/") && rest.length === 0 && !cmd.includes("\\") && cmd.length < 40) {
           dispatch({ type: "notice", text: `Unknown command ${cmd}. Try /help.` });
           return true;
