@@ -1,0 +1,17 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "side-tab",
+        "value": "*",
+        "files": [
+          "src/components/cli/console.module.css"
+        ],
+        "createdAt": "2026-09-30T08:15:49.144Z",
+        "reason": "Claude (agent) decided: .agentBlock is a 2px CLI tree gutter on a borderless transcript row (Claude Code-style subagent indent), not a card; blue only while that agent is running"
+      }
+    ]
+  }
+}

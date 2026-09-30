@@ -125,11 +125,6 @@ export function Sidebar({ onClose }: { onClose: () => void }) {
           </li>
         ))}
       </ul>
-
-      <div className={styles.footer}>
-        <span className={styles.avatar} aria-hidden="true">GS</span>
-        <span>Gabi-comm <span className={styles.plan}>· Pro</span></span>
-      </div>
     </nav>
   );
 }

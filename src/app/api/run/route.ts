@@ -54,7 +54,7 @@ export async function POST(req: Request) {
           });
         } else {
           const workspace = getWorkspace();
-          const skillsByAgent = await prepareSkills({ conversationId, room, prompt, workspace, firstTurn: !existing?.sdkSessionId, emit });
+          const skillsByAgent = await prepareSkills({ conversationId, room, prompt, workspace, firstTurn: !existing?.sdkSessionId, emit, signal: abort.signal });
           await runRoom({
             runId, conversationId, room, prompt, workspace, emit, signal: abort.signal,
             sessionId: record.sdkSessionId, skillsByAgent, fullArena: body.full === true,

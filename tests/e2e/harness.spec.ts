@@ -105,3 +105,70 @@ test("arena --full asks before a 100-agent run; cancel falls back to --quick", a
   await page.keyboard.press("Enter");
   await expect(page.getByText("Running --quick (16 agents) instead.")).toBeVisible();
 });
+
+test("leaving a chat mid-run cancels it on the server (no 409 when you come back)", async ({ page }) => {
+  await page.goto("/library");
+  await prompt(page).fill("teach me sorting");
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("status")).toBeVisible();
+  const id = new URL(page.url()).searchParams.get("c");
+  expect(id).toBeTruthy();
+  await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Arena", exact: true }).click();
+  await expect(page).toHaveURL(/\/arena$/);
+  // A fake run lasts ~4 s; a cancelled one frees the chat almost at once.
+  const statusNow = () => page.evaluate(async (cid) => {
+    const ctrl = new AbortController();
+    const res = await fetch("/api/run", {
+      method: "POST", headers: { "Content-Type": "application/json" }, signal: ctrl.signal,
+      body: JSON.stringify({ conversationId: cid, room: "library", prompt: "again" }),
+    });
+    ctrl.abort(); // only the status matters; don't hold a new run open
+    return res.status;
+  }, id);
+  await expect.poll(statusNow, { timeout: 1500, intervals: [150, 250, 400] }).toBe(200);
+});
+
+for (const room of ["/", "/library", "/agents/caveman"]) {
+  test(`+ New starts a fresh chat in ${room}, during and after a run`, async ({ page }) => {
+    const newChat = page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "New" });
+    const hero = page.locator("#prompt-input");
+    await page.goto(room);
+    await hero.fill("first chat");
+    await page.keyboard.press("Enter");
+    await expect(page.getByText("Done. Fake run finished.")).toBeVisible({ timeout: 20_000 });
+    await expect(page).toHaveURL(/\?c=/);
+    await newChat.click();
+    await expect(page).not.toHaveURL(/\?c=/);
+    await expect(page.locator("main ol")).toHaveCount(0);
+    await hero.fill("second chat");
+    await page.keyboard.press("Enter");
+    await expect(page.getByRole("status")).toBeVisible();
+    await newChat.click();
+    await expect(page.locator("main ol")).toHaveCount(0);
+    await expect(page.getByText("Interrupted by you.")).toHaveCount(0);
+  });
+}
+
+test("the sidebar has no account footer", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByText("Gabi-comm")).toHaveCount(0);
+});
+
+test("every agent mascot plays its own animation on hover", async ({ page }) => {
+  await page.goto("/agents");
+  const rows = page.locator("main li a");
+  await expect(rows).toHaveCount(12);
+  const seen = new Set<string>();
+  for (let i = 0; i < 12; i++) {
+    const row = rows.nth(i);
+    const svg = row.locator("svg.mascot");
+    const idle = await svg.evaluate((el) => el.getAnimations({ subtree: true }).length);
+    expect(idle).toBe(0);
+    await row.hover();
+    const names = await svg.evaluate((el) =>
+      el.getAnimations({ subtree: true }).map((a) => (a as CSSAnimation).animationName).sort().join(","));
+    expect(names, await svg.getAttribute("data-kind") ?? "").not.toBe("");
+    seen.add(names);
+  }
+  expect(seen.size).toBe(12);
+});

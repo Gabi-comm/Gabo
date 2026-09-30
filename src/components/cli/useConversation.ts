@@ -4,7 +4,7 @@ import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import type { Decision } from "@/harness/events";
 import type { RoomId } from "@/harness/rooms";
 import { roomHref, SESSIONS_CHANGED } from "@/components/shell/Sidebar";
-import { initialTranscript, parseSse, reduce, type Transcript } from "./transcript";
+import { initialTranscript, parseSse, reduce, type Action, type Transcript } from "./transcript";
 
 const storageKey = (id: string) => `gabo:t:${id}`;
 const MAX_STORED_ITEMS = 400;
@@ -33,6 +33,8 @@ export function useConversation(room: RoomId, initialId?: string) {
   const [conversationId, setConversationId] = useState<string | undefined>(initialId);
   const abortRef = useRef<AbortController | null>(null);
   const busy = useRef(false);
+  // Bumped by + New / /clear. A run started before the bump must not write into the fresh chat.
+  const generation = useRef(0);
 
   // Hydrate a resumed chat from this browser's copy of its transcript.
   useEffect(() => {
@@ -46,11 +48,17 @@ export function useConversation(room: RoomId, initialId?: string) {
   }, [conversationId, t]);
 
   const reset = useCallback(() => {
+    generation.current++;
     abortRef.current?.abort();
+    abortRef.current = null;
+    busy.current = false;
     setConversationId(undefined);
     dispatch({ type: "clear" });
     history.replaceState(null, "", roomHref(room));
   }, [room]);
+
+  // Leaving the chat (sidebar link, another room) stops its run so the server frees it.
+  useEffect(() => () => abortRef.current?.abort(), []);
 
   useEffect(() => {
     window.addEventListener("gabo:new", reset);
@@ -60,12 +68,14 @@ export function useConversation(room: RoomId, initialId?: string) {
   const send = useCallback(async (prompt: string, opts: { full?: boolean } = {}) => {
     if (busy.current) return;
     busy.current = true;
+    const gen = generation.current;
+    const live = (a: Action) => { if (generation.current === gen) dispatch(a); };
     const id = conversationId ?? newId();
     if (!conversationId) {
       setConversationId(id);
       history.replaceState(null, "", roomHref(room, id));
     }
-    dispatch({ type: "user_prompt", text: prompt });
+    live({ type: "user_prompt", text: prompt });
     const ctrl = new AbortController();
     abortRef.current = ctrl;
     let announced = false;
@@ -78,8 +88,8 @@ export function useConversation(room: RoomId, initialId?: string) {
       });
       if (!res.ok || !res.body) {
         const body = await res.json().catch(() => ({}));
-        dispatch({ type: "error", message: body.error ?? `The server answered ${res.status}.` });
-        dispatch({ type: "done" });
+        live({ type: "error", message: body.error ?? `The server answered ${res.status}.` });
+        live({ type: "done" });
         return;
       }
       const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
@@ -90,7 +100,7 @@ export function useConversation(room: RoomId, initialId?: string) {
         const { events, rest } = parseSse(buffer + value);
         buffer = rest;
         for (const e of events) {
-          dispatch(e);
+          live(e);
           if (!announced && e.type === "session") {
             announced = true;
             window.dispatchEvent(new Event(SESSIONS_CHANGED));
@@ -99,18 +109,20 @@ export function useConversation(room: RoomId, initialId?: string) {
       }
     } catch (err) {
       if (ctrl.signal.aborted) {
-        dispatch({ type: "notice", text: "Interrupted by you." });
+        live({ type: "notice", text: "Interrupted by you." });
       } else {
-        dispatch({
+        live({
           type: "error",
           message: "Lost the connection to the Gabo server.",
           hint: err instanceof Error ? `Is \`npm run dev\` still running? (${err.message})` : undefined,
         });
       }
     } finally {
-      dispatch({ type: "done" });
-      abortRef.current = null;
-      busy.current = false;
+      live({ type: "done" });
+      if (generation.current === gen) {
+        abortRef.current = null;
+        busy.current = false;
+      }
       window.dispatchEvent(new Event(SESSIONS_CHANGED));
     }
   }, [conversationId, room]);

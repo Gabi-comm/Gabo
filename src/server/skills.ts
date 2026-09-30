@@ -19,6 +19,7 @@ export interface PrepareSkillsInput {
   workspace: string;
   firstTurn: boolean;
   emit: (e: UiEvent) => void;
+  signal?: AbortSignal;
 }
 
 type SkillMap = Partial<Record<AgentId, string[]>>;
@@ -28,12 +29,14 @@ function onlyInstalled(map: SkillMap, installed: Set<string>): SkillMap {
 }
 
 /** One cheap, tool-less Haiku turn on the subscription that returns the scout's JSON. */
-async function askScout(prompt: string, cwd: string): Promise<string> {
+async function askScout(prompt: string, cwd: string, signal?: AbortSignal): Promise<string> {
   const { query } = await import("@anthropic-ai/claude-agent-sdk");
   const env: Record<string, string | undefined> = { ...process.env };
   delete env.ANTHROPIC_API_KEY;
   const abortController = new AbortController();
   const timer = setTimeout(() => abortController.abort(), SCOUT_TIMEOUT_MS);
+  const onAbort = () => abortController.abort();
+  signal?.addEventListener("abort", onAbort);
   let text = "";
   try {
     for await (const m of query({
@@ -48,6 +51,7 @@ async function askScout(prompt: string, cwd: string): Promise<string> {
     }
   } finally {
     clearTimeout(timer);
+    signal?.removeEventListener("abort", onAbort);
   }
   return text;
 }
@@ -56,7 +60,7 @@ async function askScout(prompt: string, cwd: string): Promise<string> {
  * The skill-scout rule from the spec: before the first task of a chat, each pulled agent keeps only the
  * skills that fit its role and the task. Later turns reuse the pick (plus anything downloaded since).
  */
-export async function prepareSkills({ conversationId, room, prompt, workspace, firstTurn, emit }: PrepareSkillsInput): Promise<SkillMap> {
+export async function prepareSkills({ conversationId, room, prompt, workspace, firstTurn, emit, signal }: PrepareSkillsInput): Promise<SkillMap> {
   const local = listLocal([...SKILL_READ_ROOTS, workspaceSkillsDir(workspace)]);
   const installed = new Set(local.map((s) => s.name));
   const saved = sessions.get(conversationId)?.skills;
@@ -76,10 +80,11 @@ export async function prepareSkills({ conversationId, room, prompt, workspace, f
 
   let reply = "";
   try {
-    reply = await askScout(buildScoutPrompt(prompt, roster, [...pool.values()], loadSpec().skillScout), workspace);
+    reply = await askScout(buildScoutPrompt(prompt, roster, [...pool.values()], loadSpec().skillScout), workspace, signal);
   } catch {
     note = "The skill scout didn't answer, so agents run without extra skills this time.";
   }
+  if (signal?.aborted) return {};
   const lines = parseScoutReply(reply, roster, [...pool.keys()]);
   const missing = computeMissing(lines, catalog, installed);
   emit({ type: "skills", lines, missing, note });

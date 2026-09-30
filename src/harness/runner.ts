@@ -94,19 +94,36 @@ export interface RunInput {
   fullArena?: boolean;
   emit: (e: UiEvent) => void;
   signal: AbortSignal;
+  /** Test seam; defaults to the Agent SDK's query(). */
+  queryImpl?: typeof import("@anthropic-ai/claude-agent-sdk").query;
+}
+
+/** The hard checks every tool call passes through, whatever the permission rules say. */
+export function preToolUseReason(tool: string, toolInput: Record<string, unknown>, workspace: string, fullArena: boolean): string | null {
+  return guardToolInput(tool, toolInput, workspace, SKILL_READ_ROOTS)
+    ?? (tool === "Bash" || tool === "PowerShell" ? arenaSizeGuard(String(toolInput.command ?? ""), fullArena) : null);
 }
 
 const LOGIN_HINT = "Open a terminal, run `claude`, then `/login` with your Pro/Max account.";
 
 export async function runRoom(input: RunInput): Promise<void> {
   const { runId, conversationId, room, prompt, workspace, sessionId, skillsByAgent, fullArena = false, emit, signal } = input;
-  const { query } = await import("@anthropic-ai/claude-agent-sdk");
+  // Esc can land while setup awaits (skill scout, SDK import, Python check); an abort before the
+  // listener below is attached would otherwise be missed and the run would go on unseen.
+  const stopped = () => {
+    if (!signal.aborted) return false;
+    emit({ type: "done" });
+    return true;
+  };
+  if (stopped()) return;
+  const query = input.queryImpl ?? (await import("@anthropic-ai/claude-agent-sdk")).query;
   const spec = loadSpec();
 
   let arenaDir: string | null = null;
   let extraWorkflow: string | undefined;
   if (room === "arena") {
     const python = await detectPython();
+    if (stopped()) return;
     if (!python) {
       emit({ type: "error", message: "The Arena needs Python 3.8 or newer to run bracket.py.", hint: "Install Python from python.org, then restart `npm run dev`." });
       emit({ type: "done" });
@@ -122,6 +139,7 @@ export async function runRoom(input: RunInput): Promise<void> {
   }
   const sessionRules = rulesByConversation.get(conversationId) ?? new Set<string>();
   rulesByConversation.set(conversationId, sessionRules);
+  if (stopped()) return;
   const abortController = new AbortController();
   const onAbort = () => abortController.abort();
   signal.addEventListener("abort", onAbort);
@@ -138,9 +156,7 @@ export async function runRoom(input: RunInput): Promise<void> {
       PreToolUse: [{
         hooks: [async (hookInput) => {
           const h = hookInput as { tool_name?: string; tool_input?: Record<string, unknown> };
-          const toolInput = h.tool_input ?? {};
-          const reason = guardToolInput(String(h.tool_name), toolInput, workspace, SKILL_READ_ROOTS)
-            ?? (h.tool_name === "Bash" ? arenaSizeGuard(String(toolInput.command ?? ""), fullArena) : null);
+          const reason = preToolUseReason(String(h.tool_name), h.tool_input ?? {}, workspace, fullArena);
           return reason
             ? { hookSpecificOutput: { hookEventName: "PreToolUse" as const, permissionDecision: "deny" as const, permissionDecisionReason: reason } }
             : {};
