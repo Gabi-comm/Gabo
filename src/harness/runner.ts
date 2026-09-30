@@ -11,6 +11,7 @@ import { rosterFor, workflowFor, type RoomId } from "./rooms";
 import { loadSpec, type ParsedSpec } from "./spec";
 import { loadOverrides, type AgentOverride, type Overrides } from "./overrides";
 import type { RunPrefs } from "./controls";
+import { isLocalOn, localEnv, type LocalLlmConfig } from "./localLlm";
 import { summarizeTool } from "./events";
 import { QUICK_AGENTS, arenaSizeGuard, detectPython, ensureIdeaArena, withIdeaRubric } from "./arena";
 
@@ -57,10 +58,13 @@ export interface BuildOptionsInput {
   prefs?: RunPrefs;
   /** Extra MCP servers for this run (e.g. gabo-ai: the other AIs from the Plugins page). */
   mcpServers?: Record<string, McpServerConfig>;
+  /** "Switch to Local LLM": when on, everything runs on this Ollama model instead of the Claude plan. */
+  local?: LocalLlmConfig;
 }
 
 /** Everything a room run passes to query(), minus the live callbacks. */
-export function buildOptions({ room, workspace, spec, sessionId, skillsByAgent = {}, team, customAgents = [], extraWorkflow, overrides = {}, prefs = {}, mcpServers }: BuildOptionsInput): Options {
+export function buildOptions({ room, workspace, spec, sessionId, skillsByAgent = {}, team, customAgents = [], extraWorkflow, overrides = {}, prefs = {}, mcpServers, local }: BuildOptionsInput): Options {
+  const localOn = isLocalOn(local);
   const agents: Record<string, AgentDefinition> = {};
   for (const id of rosterFor(room, team)) {
     const prompt = agentPrompt(id, spec, overrides, customAgents);
@@ -68,12 +72,14 @@ export function buildOptions({ room, workspace, spec, sessionId, skillsByAgent =
     agents[id] = {
       description: describeAgent(id, customAgents),
       prompt,
+      ...(localOn ? { model: local.model } : {}),
       ...(skillsByAgent[id]?.length ? { skills: skillsByAgent[id] } : {}),
     };
   }
   const env: Record<string, string | undefined> = { ...process.env };
   // Runs on the logged-in Claude subscription; a stray API key would silently switch billing.
   delete env.ANTHROPIC_API_KEY;
+  if (localOn) Object.assign(env, localEnv(local));
   return {
     cwd: workspace,
     env,
@@ -85,7 +91,7 @@ export function buildOptions({ room, workspace, spec, sessionId, skillsByAgent =
     // settingSources omitted = everything the CLI loads: user, project and local settings, CLAUDE.md, plugins, MCP.
     permissionMode: prefs.mode ?? "default",
     ...(mcpServers && Object.keys(mcpServers).length ? { mcpServers } : {}),
-    ...(prefs.model ? { model: prefs.model } : {}),
+    ...(localOn ? { model: local.model } : prefs.model ? { model: prefs.model } : {}),
     ...(prefs.effort ? { effort: prefs.effort } : {}),
     systemPrompt: {
       type: "preset",
@@ -155,6 +161,8 @@ export interface RunInput {
   /** Laboratory team, and the custom agents that may be on it. */
   team?: string[];
   customAgents?: CustomAgent[];
+  /** "Switch to Local LLM" settings. */
+  local?: LocalLlmConfig;
   /** Gab confirmed a full (more than --quick) arena run. */
   fullArena?: boolean;
   /** Model, permission mode and effort picked in the status line. */
@@ -179,7 +187,7 @@ export function preToolUseReason(tool: string, toolInput: Record<string, unknown
 const LOGIN_HINT = "Open a terminal, run `claude`, then `/login` with your Pro/Max account.";
 
 export async function runRoom(input: RunInput): Promise<void> {
-  const { runId, conversationId, room, prompt, workspace, sessionId, skillsByAgent, fullArena = false, prefs, images = [], mcpServers, systemNote, team, customAgents = [], emit, signal } = input;
+  const { runId, conversationId, room, prompt, workspace, sessionId, skillsByAgent, fullArena = false, prefs, images = [], mcpServers, systemNote, team, customAgents = [], local, emit, signal } = input;
   // Esc can land while setup awaits (skill scout, SDK import, Python check); an abort before the
   // listener below is attached would otherwise be missed and the run would go on unseen.
   const stopped = () => {
@@ -223,7 +231,7 @@ export async function runRoom(input: RunInput): Promise<void> {
     });
 
   const options: Options = {
-    ...buildOptions({ room, workspace, spec, sessionId, skillsByAgent, extraWorkflow: [extraWorkflow, systemNote].filter(Boolean).join("\n") || undefined, overrides: loadOverrides(), prefs, mcpServers, team, customAgents }),
+    ...buildOptions({ room, workspace, spec, sessionId, skillsByAgent, extraWorkflow: [extraWorkflow, systemNote].filter(Boolean).join("\n") || undefined, overrides: loadOverrides(), prefs, mcpServers, team, customAgents, local }),
     abortController,
     canUseTool: makeCanUseTool({ runId, workspace, broker: defaultBroker, sessionRules, onAsk }),
     hooks: {
@@ -289,9 +297,10 @@ export interface FakeRunInput {
   images?: ImageAttachment[];
   team?: string[];
   customAgents?: CustomAgent[];
+  local?: LocalLlmConfig;
 }
 
-export async function fakeRun({ room, prompt, emit, signal, delayMs = 120, ask, prefs = {}, images = [], team, customAgents = [] }: FakeRunInput): Promise<void> {
+export async function fakeRun({ room, prompt, emit, signal, delayMs = 120, ask, prefs = {}, images = [], team, customAgents = [], local }: FakeRunInput): Promise<void> {
   const wait = () => new Promise((r) => setTimeout(r, delayMs));
   const step = async (e: UiEvent) => {
     if (signal.aborted) throw new Error("aborted");
@@ -300,7 +309,7 @@ export async function fakeRun({ room, prompt, emit, signal, delayMs = 120, ask, 
   };
   try {
     await step({ type: "session", sessionId: "fake-session", model: "fake-model", cwd: "C:/fake/workspace" });
-    await step({ type: "notice", text: `Run settings: mode ${prefs.mode ?? "default"}, model ${prefs.model ?? "default"}, effort ${prefs.effort ?? "auto"}` });
+    await step({ type: "notice", text: `Run settings: mode ${prefs.mode ?? "default"}, model ${isLocalOn(local) ? `${local.model} (local)` : prefs.model ?? "default"}, effort ${prefs.effort ?? "auto"}` });
     if (images.length) await step({ type: "notice", text: `Received ${images.length} image${images.length === 1 ? "" : "s"} (${images.map((i) => i.mediaType).join(", ")}).` });
     const roster = rosterFor(room, team).filter((a) => isAgentId(a) || customAgents.some((c) => c.id === a));
     const uiAgents = new Set<AgentKey>(["designer", "tester"]);

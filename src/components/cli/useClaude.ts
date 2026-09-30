@@ -71,3 +71,23 @@ export function usePrefs(defaultMode: string | undefined): [Prefs, (patch: Parti
 export function toRunPrefs(p: Prefs): RunPrefs {
   return { ...(p.model ? { model: p.model } : {}), mode: p.mode, ...(p.effort ? { effort: p.effort } : {}) };
 }
+
+export const LOCAL_CHANGED = "gabo:local-changed";
+
+export interface LocalState { enabled: boolean; model: string }
+
+/** Whether agents run on a local Ollama model (Switch to Local LLM). Refreshes when that page saves. */
+export function useLocalLlm(): LocalState | null {
+  const [state, setState] = useState<LocalState | null>(null);
+  useEffect(() => {
+    let alive = true;
+    const load = () => fetch("/api/local-llm", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((b) => { if (alive && b?.config) setState({ enabled: !!b.config.enabled && !!b.config.model, model: b.config.model }); })
+      .catch(() => {});
+    load();
+    window.addEventListener(LOCAL_CHANGED, load);
+    return () => { alive = false; window.removeEventListener(LOCAL_CHANGED, load); };
+  }, []);
+  return state;
+}

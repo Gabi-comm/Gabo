@@ -10,7 +10,7 @@ import { roomHref } from "@/lib/routes";
 import styles from "./shell.module.css";
 
 /** One entry of the unified history: a Claude Code session (CLI or app) or a fresh app chat. */
-interface Recent { sessionId: string | null; title: string; project: string | null; room: RoomId | null; updatedAt: number; href: string }
+interface Recent { sessionId: string | null; title: string; project: string | null; room: RoomId | null; updatedAt: number; href: string; pinKey: string; pinned: boolean }
 
 export const SESSIONS_CHANGED = "gabo:sessions-changed";
 
@@ -26,11 +26,39 @@ const WORKSPACE_PATHS = WORKSPACE.map((w) => `/${w.room}`);
 const HISTORY_OPEN_KEY = "gabo:history-open";
 const WORKSPACE_OPEN_KEY = "gabo:workspace-open";
 
+function RecentRow({ r, onPin }: { r: Recent; onPin: (r: Recent) => void }) {
+  return (
+    <li className={styles.recentRow}>
+      <Link href={r.href} className={styles.recent} title={`${r.title}${r.project ? ` — ${r.project}` : ""}`}>
+        <span className={styles.recentRoom}>{r.room && r.room !== "home" ? (r.room.startsWith("agent:") ? r.room.slice(6) : r.room) : (r.project ?? "home")}</span>
+        <span className={styles.recentTitle}>{r.title}</span>
+      </Link>
+      <button
+        className={styles.pinButton}
+        data-pinned={r.pinned}
+        onClick={() => onPin(r)}
+        aria-label={`${r.pinned ? "Unpin" : "Pin"} ${r.title}`}
+        title={r.pinned ? "Unpin" : "Pin to the top"}
+      >
+        <Icon name="pin" size={13} />
+      </button>
+    </li>
+  );
+}
+
 export function Sidebar({ onClose }: { onClose: () => void }) {
   const pathname = usePathname();
   const [recents, setRecents] = useState<Recent[] | null>(null);
   const [recentsError, setRecentsError] = useState(false);
   const inWorkspace = WORKSPACE_PATHS.includes(pathname);
+  const pinned = (recents ?? []).filter((r) => r.pinned);
+
+  async function togglePin(r: Recent) {
+    // Optimistic: move it now, then confirm with the server.
+    setRecents((list) => list?.map((x) => (x.pinKey === r.pinKey ? { ...x, pinned: !r.pinned } : x)) ?? list);
+    const res = await fetch("/api/pins", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key: r.pinKey, pinned: !r.pinned }) }).catch(() => null);
+    if (!res?.ok) load();
+  }
   const [workspaceOpen, setWorkspaceOpen] = useState(inWorkspace);
   const [historyOpen, setHistoryOpen] = useState(false);
 
@@ -129,12 +157,25 @@ export function Sidebar({ onClose }: { onClose: () => void }) {
           </Link>
         </li>
         <li>
+          <Link href="/local-llm" className={styles.navItem} aria-current={pathname === "/local-llm" ? "page" : undefined}>
+            <Icon name="chip" /> Local LLM
+          </Link>
+        </li>
+        <li>
           <Link href="/status" className={styles.navItem} aria-current={pathname === "/status" ? "page" : undefined}>
             <Icon name="status" /> Status
           </Link>
         </li>
       </ul>
 
+      {pinned.length > 0 && (
+        <>
+          <div className={styles.pinnedHead}>Pinned</div>
+          <ul className={styles.recents} aria-label="Pinned">
+            {pinned.map((r) => <RecentRow key={r.href} r={r} onPin={togglePin} />)}
+          </ul>
+        </>
+      )}
       <button
         className={styles.historyToggle}
         onClick={toggleHistory}
@@ -144,23 +185,19 @@ export function Sidebar({ onClose }: { onClose: () => void }) {
       >
         <span className={styles.groupChevron} data-open={historyOpen}><Icon name="chevron" size={12} /></span>
         History
-        {recents && <span className={styles.recentsSub}>{recents.length}</span>}
+        {recents && <span className={styles.recentsSub}>{recents.length - pinned.length}</span>}
       </button>
       <ul className={styles.recents} id="history-list" hidden={!historyOpen}>
         {recentsError && <li className={styles.recentsEmpty}>Couldn&apos;t load chats. <button className={styles.linkButton} onClick={load}>Retry</button></li>}
         {!recentsError && recents === null && <li className={styles.recentsEmpty}>Loading…</li>}
         {!recentsError && recents?.length === 0 && <li className={styles.recentsEmpty}>No chats yet.</li>}
-        {recents?.map((r) => (
-          <li key={r.href}>
-            <Link href={r.href} className={styles.recent} title={`${r.title}${r.project ? ` — ${r.project}` : ""}`}>
-              <span className={styles.recentRoom}>{r.room && r.room !== "home" ? (r.room.startsWith("agent:") ? r.room.slice(6) : r.room) : (r.project ?? "home")}</span>
-              <span className={styles.recentTitle}>{r.title}</span>
-            </Link>
-          </li>
-        ))}
+        {recents?.filter((r) => !r.pinned).map((r) => <RecentRow key={r.href} r={r} onPin={togglePin} />)}
       </ul>
       </div>
       <div className={styles.footer}>
+        <Link href="/about" className={styles.navItem} aria-current={pathname === "/about" ? "page" : undefined}>
+          <Icon name="info" /> About
+        </Link>
         <Link href="/settings" className={styles.navItem} aria-current={pathname === "/settings" ? "page" : undefined}>
           <Icon name="settings" /> Settings
         </Link>

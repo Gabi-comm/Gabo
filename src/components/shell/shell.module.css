@@ -98,3 +98,16 @@
 /* Nav + history scroll on their own; brand, New and Settings stay put. */
 .sidebar { overflow: hidden; }
 .scrollArea { flex: 1; min-height: 0; overflow-y: auto; margin: 0 -10px; padding: 0 10px; }
+
+/* Pinned chats and pin buttons */
+.pinnedHead { color: var(--muted); font-size: 12px; padding: 14px 10px 4px; }
+.recentRow { display: flex; align-items: center; }
+.recentRow .recent { flex: 1; min-width: 0; }
+.pinButton {
+  flex: none; background: none; border: 0; border-radius: 6px; padding: 4px; color: var(--dim);
+  opacity: 0; transition: opacity 120ms ease;
+}
+.recentRow:hover .pinButton, .pinButton:focus-visible, .pinButton[data-pinned="true"] { opacity: 1; }
+.pinButton:hover { color: var(--text); background: var(--surface); }
+.pinButton[data-pinned="true"] { color: var(--blue-text); }
+@media (hover: none) { .pinButton { opacity: 1; } }

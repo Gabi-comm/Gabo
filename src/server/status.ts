@@ -7,6 +7,10 @@ import { usableProviders } from "@/harness/providers";
 import { getClaudeInfo } from "./claudeInfo";
 import { FAKE, getWorkspace } from "./config";
 import { loadProviders } from "./providers";
+import { loadLocal } from "./localLlm";
+import { planUsage, readRateLimits, usageSummary, type RateLimit } from "./usageLog";
+import { isLocalOn } from "@/harness/localLlm";
+import type { PlanUsage } from "@/harness/usage";
 
 export interface Check { name: string; ok: boolean; detail: string; ms?: number }
 
@@ -17,6 +21,13 @@ export interface Status {
   connectivity: Check[];
   tools: { mcp: { name: string; status: string; error?: string }[]; plugins: string[]; commands: number; otherAis: string[] };
   gabo: Check[];
+  /** Which brain the agents use right now. */
+  backend: { kind: "subscription" | "local"; detail: string };
+  usage: {
+    plan: { text: string; meters: PlanUsage[] } | null;
+    rateLimits: RateLimit[];
+    summary: ReturnType<typeof usageSummary>;
+  };
 }
 
 function readJson(file: string): Record<string, unknown> | null {
@@ -53,13 +64,21 @@ const FAKE_STATUS: Status = {
   ],
   tools: { mcp: [{ name: "plugin:github:github", status: "connected" }, { name: "claude.ai Gmail", status: "needs-auth" }], plugins: ["superpowers", "github"], commands: 3, otherAis: [] },
   gabo: [{ name: "Workspace", ok: true, detail: "C:/fake/workspace" }, { name: "Python (Arena)", ok: true, detail: "python" }],
+  backend: { kind: "subscription", detail: "Claude Pro" },
+  usage: { plan: null, rateLimits: [], summary: { today: { runs: 0, tokens: 0, costUsd: 0 }, week: { runs: 0, tokens: 0, costUsd: 0 }, byRoom: [], byModel: [] } },
 };
 
 /** Everything the CLI's /status shows, plus Gabo's own checks. Every part is independent: one failure never hides the rest. */
 export async function getStatus(refresh = false): Promise<Status> {
-  if (FAKE) return { ...FAKE_STATUS, checkedAt: Date.now() };
+  const local = loadLocal();
+  const backend: Status["backend"] = isLocalOn(local)
+    ? { kind: "local", detail: `Ollama · ${local.model} (${local.baseUrl})` }
+    : { kind: "subscription", detail: "Claude plan (subscription)" };
+  if (FAKE) {
+    return { ...FAKE_STATUS, checkedAt: Date.now(), backend, usage: { plan: await planUsage(refresh), rateLimits: readRateLimits(), summary: usageSummary() } };
+  }
   const settings = readJson(path.join(os.homedir(), ".claude", "settings.json")) ?? {};
-  const [cli, info, python, api, statusPage] = await Promise.all([
+  const [cli, info, python, api, statusPage, plan] = await Promise.all([
     cliVersion(),
     getClaudeInfo(refresh).catch(() => null),
     detectPython(),
@@ -68,6 +87,7 @@ export async function getStatus(refresh = false): Promise<Status> {
       const j = (await res.json().catch(() => null)) as { status?: { description?: string } } | null;
       return j?.status?.description ?? `HTTP ${res.status}`;
     }),
+    planUsage(refresh),
   ]);
   const workspace = getWorkspace();
   const ais = usableProviders(loadProviders());
@@ -99,5 +119,7 @@ export async function getStatus(refresh = false): Promise<Status> {
       { name: "Workspace", ok: fs.existsSync(workspace), detail: workspace },
       { name: "Python (Arena)", ok: !!python, detail: python ?? "not found; the Arena needs Python 3.8+" },
     ],
+    backend,
+    usage: { plan, rateLimits: readRateLimits(), summary: usageSummary() },
   };
 }

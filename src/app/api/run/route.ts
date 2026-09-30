@@ -10,6 +10,8 @@ import { usableProviders } from "@/harness/providers";
 import { AI_SERVER, aiSystemNote, buildAiServer } from "@/harness/aiTools";
 import { loadProviders } from "@/server/providers";
 import { loadCustomAgents } from "@/server/customAgents";
+import { loadLocal } from "@/server/localLlm";
+import { appendUsage, recordRateLimit } from "@/server/usageLog";
 import { FAKE, getWorkspace, sessions, validateWorkspace } from "@/server/config";
 import { prepareSkills } from "@/server/skills";
 
@@ -32,6 +34,7 @@ export async function POST(req: Request) {
   }
   if (!isRoomId(room)) return Response.json({ error: "Unknown room." }, { status: 400 });
   const customAgents = loadCustomAgents();
+  const local = loadLocal();
   if (room.startsWith("agent:x-") && !customAgents.some((a) => `agent:${a.id}` === room)) {
     return Response.json({ error: "That agent was deleted." }, { status: 404 });
   }
@@ -56,15 +59,24 @@ export async function POST(req: Request) {
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       let closed = false;
+      let runModel = local.enabled ? local.model : "";
       const emit = (e: UiEvent) => {
         if (closed) return;
-        if (e.type === "session" && !FAKE) sessions.upsert({ id: conversationId, sdkSessionId: e.sessionId });
+        if (e.type === "session") {
+          runModel = e.model;
+          if (!FAKE) sessions.upsert({ id: conversationId, sdkSessionId: e.sessionId });
+        }
+        // Usage for the Status page: plan meters from Claude Code, and a line per finished run.
+        if (e.type === "rate_limit") { recordRateLimit(e.info); return; }
+        if (e.type === "result") {
+          appendUsage({ at: Date.now(), room, model: runModel, inputTokens: e.inputTokens, outputTokens: e.outputTokens, costUsd: e.costUsd });
+        }
         try { controller.enqueue(encoder.encode(`data: ${JSON.stringify(e)}\n\n`)); } catch { closed = true; }
       };
       try {
         if (FAKE) {
           await fakeRun({
-            room, prompt, emit, signal: abort.signal, prefs: parseRunPrefs(body.prefs), images, team, customAgents,
+            room, prompt, emit, signal: abort.signal, prefs: parseRunPrefs(body.prefs), images, team, customAgents, local,
             ask: async (tool, summary, extra = {}) => {
               let requestId = "";
               const decision = await broker.request(runId, { tool, summary, input: {}, ...extra }, (r) => {
@@ -85,7 +97,7 @@ export async function POST(req: Request) {
           const skillsByAgent = await prepareSkills({ conversationId, room, prompt, workspace, firstTurn: !existing?.sdkSessionId, emit, signal: abort.signal, team, customAgents });
           await runRoom({
             runId, conversationId, room, prompt, workspace, emit, signal: abort.signal,
-            sessionId: record.sdkSessionId, skillsByAgent, fullArena: body.full === true, prefs: parseRunPrefs(body.prefs), images, team, customAgents,
+            sessionId: record.sdkSessionId, skillsByAgent, fullArena: body.full === true, prefs: parseRunPrefs(body.prefs), images, team, customAgents, local,
             ...(ais.length ? { mcpServers: { [AI_SERVER]: buildAiServer(ais) }, systemNote: aiSystemNote(ais) } : {}),
           });
         }

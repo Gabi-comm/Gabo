@@ -5,6 +5,7 @@ import { historyToItems, sessionTitle } from "@/harness/history";
 import type { Item } from "@/components/cli/transcript";
 import { roomHref } from "@/lib/routes";
 import { FAKE, sessions } from "./config";
+import { loadPins } from "./pins";
 
 export interface HistoryEntry {
   /** Claude Code session id, or null for an app chat that hasn't started a session yet. */
@@ -16,6 +17,9 @@ export interface HistoryEntry {
   room: RoomId | null;
   updatedAt: number;
   href: string;
+  /** Stable key for pinning: "s:<session id>" or "c:<chat id>". */
+  pinKey: string;
+  pinned: boolean;
 }
 
 export interface OpenedHistory {
@@ -49,8 +53,19 @@ async function sdk() {
 /** Every Claude Code session (CLI and app, all projects) plus app chats that haven't started one, newest first. */
 export async function listHistory(limit = 80): Promise<HistoryEntry[]> {
   const records = sessions.list();
+  const pins = new Set(loadPins());
   const bySession = new Map(records.filter((r) => r.sdkSessionId).map((r) => [r.sdkSessionId!, r]));
   const infos = FAKE ? FAKE_SESSIONS : await (await sdk()).listSessions({ limit });
+  if (!FAKE) {
+    // Pinned sessions older than the listing window are fetched one by one so they never disappear.
+    const listedIds = new Set(infos.map((i) => i.sessionId));
+    const missing = [...pins].filter((k) => k.startsWith("s:") && !listedIds.has(k.slice(2))).map((k) => k.slice(2));
+    const { getSessionInfo } = await sdk();
+    for (const id of missing) {
+      const info = await getSessionInfo(id).catch(() => undefined);
+      if (info) (infos as typeof info[]).push(info);
+    }
+  }
 
   const entries: HistoryEntry[] = infos.map((s) => {
     const record = bySession.get(s.sessionId);
@@ -64,6 +79,8 @@ export async function listHistory(limit = 80): Promise<HistoryEntry[]> {
       room: record?.room ?? null,
       updatedAt: s.lastModified,
       href: record ? roomHref(record.room, record.id) : `/?s=${encodeURIComponent(s.sessionId)}`,
+      pinKey: `s:${s.sessionId}`,
+      pinned: pins.has(`s:${s.sessionId}`),
     };
   });
   const listed = new Set(infos.map((s) => s.sessionId));
@@ -73,9 +90,13 @@ export async function listHistory(limit = 80): Promise<HistoryEntry[]> {
     entries.push({
       sessionId: r.sdkSessionId ?? null, title: r.title, cwd: r.cwd ?? null, project: r.cwd ? path.basename(r.cwd) : null,
       branch: null, room: r.room, updatedAt: r.updatedAt, href: roomHref(r.room, r.id),
+      pinKey: r.sdkSessionId ? `s:${r.sdkSessionId}` : `c:${r.id}`,
+      pinned: pins.has(r.sdkSessionId ? `s:${r.sdkSessionId}` : `c:${r.id}`),
     });
   }
-  return entries.sort((a, b) => b.updatedAt - a.updatedAt).slice(0, limit);
+  // Pinned chats always make the list, even when older than the listing window.
+  const sorted = entries.sort((a, b) => b.updatedAt - a.updatedAt);
+  return [...sorted.filter((e) => e.pinned), ...sorted.filter((e) => !e.pinned).slice(0, limit)];
 }
 
 /**

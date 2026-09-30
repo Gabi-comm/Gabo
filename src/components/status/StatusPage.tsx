@@ -11,6 +11,35 @@ interface Status {
   connectivity: Check[];
   tools: { mcp: { name: string; status: string; error?: string }[]; plugins: string[]; commands: number; otherAis: string[] };
   gabo: Check[];
+  backend: { kind: "subscription" | "local"; detail: string };
+  usage: {
+    plan: { text: string; meters: { label: string; percent: number; resets: string }[] } | null;
+    rateLimits: { type: string; status: string; utilization?: number; resetsAt?: number; at: number }[];
+    summary: {
+      today: Totals; week: Totals;
+      byRoom: (Totals & { key: string })[]; byModel: (Totals & { key: string })[];
+    };
+  };
+}
+
+interface Totals { runs: number; tokens: number; costUsd: number }
+
+const fmtTokens = (n: number) => (n >= 1_000_000 ? `${(n / 1_000_000).toFixed(2)}M` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n));
+const LIMIT_LABEL: Record<string, string> = {
+  five_hour: "5-hour window", seven_day: "7-day window", seven_day_opus: "7-day (Opus)", seven_day_sonnet: "7-day (Sonnet)", overage: "Extra usage",
+};
+
+function Meter({ label, percent, note }: { label: string; percent: number; note?: string }) {
+  const level = percent >= 90 ? "high" : percent >= 70 ? "mid" : "low";
+  return (
+    <div className={styles.meter}>
+      <div className={styles.meterTop}><span>{label}</span><span>{Math.round(percent)}%</span></div>
+      <div className={styles.bar} role="progressbar" aria-label={label} aria-valuenow={Math.round(percent)} aria-valuemin={0} aria-valuemax={100}>
+        <span data-level={level} style={{ width: `${Math.min(100, percent)}%` }} />
+      </div>
+      {note && <div className={styles.muted}>{note}</div>}
+    </div>
+  );
 }
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
@@ -71,6 +100,7 @@ export function StatusPage() {
           <section className={styles.card} aria-label="Claude Code">
             <h2>Claude Code</h2>
             <dl>
+              <Row label="Running on">{status.backend.kind === "local" ? <a href="/local-llm">{status.backend.detail}</a> : status.backend.detail}</Row>
               <Row label="Version">{status.claudeCode.bundledVersion ?? "unknown"} <span className={styles.muted}>(used by Gabo)</span></Row>
               <Row label="CLI on PATH">{status.claudeCode.cliVersion ?? "not found"}</Row>
               <Row label="Agent SDK">{status.claudeCode.sdkVersion ?? "unknown"}</Row>
@@ -102,6 +132,48 @@ export function StatusPage() {
             <dl>
               <Row label="Other AIs">{status.tools.otherAis.join(", ") || "none connected (Plugins)"}</Row>
             </dl>
+          </section>
+
+          <section className={`${styles.card} ${styles.wide}`} aria-label="Usage">
+            <h2>Usage</h2>
+            <div className={styles.usageGrid}>
+              <div>
+                <h3>Your plan</h3>
+                {status.usage.plan?.meters.length
+                  ? status.usage.plan.meters.map((m) => <Meter key={m.label} label={m.label} percent={m.percent} note={m.resets ? `resets ${m.resets}` : undefined} />)
+                  : <p className={styles.muted}>{status.usage.plan ? status.usage.plan.text.slice(0, 300) : "Claude Code didn't report plan usage."}</p>}
+                {status.usage.rateLimits.filter((r) => typeof r.utilization === "number").map((r) => (
+                  <Meter
+                    key={r.type}
+                    label={`${LIMIT_LABEL[r.type] ?? r.type} (last run)`}
+                    percent={(r.utilization ?? 0) * 100}
+                    note={`${r.status.replace("_", " ")}${r.resetsAt ? ` · resets ${new Date(r.resetsAt * 1000).toLocaleString()}` : ""}`}
+                  />
+                ))}
+              </div>
+              <div>
+                <h3>In Gabo</h3>
+                <dl>
+                  <Row label="Today">{status.usage.summary.today.runs} runs · {fmtTokens(status.usage.summary.today.tokens)} tokens · ${status.usage.summary.today.costUsd.toFixed(2)} API-equiv.</Row>
+                  <Row label="Last 7 days">{status.usage.summary.week.runs} runs · {fmtTokens(status.usage.summary.week.tokens)} tokens · ${status.usage.summary.week.costUsd.toFixed(2)} API-equiv.</Row>
+                </dl>
+                {status.usage.summary.byRoom.length > 0 && (
+                  <table className={styles.table}>
+                    <caption className="sr-only">Last 7 days by room</caption>
+                    <thead><tr><th>Room</th><th>Runs</th><th>Tokens</th></tr></thead>
+                    <tbody>{status.usage.summary.byRoom.map((r) => <tr key={r.key}><td>{r.key}</td><td>{r.runs}</td><td>{fmtTokens(r.tokens)}</td></tr>)}</tbody>
+                  </table>
+                )}
+                {status.usage.summary.byModel.length > 0 && (
+                  <table className={styles.table}>
+                    <caption className="sr-only">Last 7 days by model</caption>
+                    <thead><tr><th>Model</th><th>Runs</th><th>Tokens</th></tr></thead>
+                    <tbody>{status.usage.summary.byModel.map((r) => <tr key={r.key}><td>{r.key}</td><td>{r.runs}</td><td>{fmtTokens(r.tokens)}</td></tr>)}</tbody>
+                  </table>
+                )}
+                <p className={styles.muted}>The dollar figure is what the same tokens would cost on the API; your plan isn&apos;t billed per token.</p>
+              </div>
+            </div>
           </section>
 
           <section className={`${styles.card} ${styles.wide}`} aria-label="Tools">

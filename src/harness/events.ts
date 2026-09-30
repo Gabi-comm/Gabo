@@ -25,6 +25,7 @@ export type UiEvent =
   | { type: "result"; ok: boolean; costUsd: number; inputTokens: number; outputTokens: number; durationMs: number }
   | { type: "error"; message: string; hint?: string }
   | { type: "notice"; text: string }
+  | { type: "rate_limit"; info: Record<string, unknown> }
   | { type: "mode"; mode: string }
   | { type: "done" };
 
@@ -159,6 +160,10 @@ export function createMapper(known: (id: unknown) => boolean = isAgentId) {
           out.push({ type: "tool_result", id, ok, preview, lines: lines.length });
         }
         return out;
+      }
+      case "rate_limit_event": {
+        const info = msg.rate_limit_info;
+        return info && typeof info === "object" ? [{ type: "rate_limit", info: info as Record<string, unknown> }] : [];
       }
       case "result": {
         const usage = (msg.usage ?? {}) as { input_tokens?: number; output_tokens?: number };

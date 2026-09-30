@@ -14,7 +14,7 @@ import { AgentMascot, useAgentMeta } from "@/components/agents/registry";
 import type { AgentInfo } from "@/harness/agentMeta";
 
 type Meta = (id: AgentKey) => AgentInfo;
-import { fetchClaudeInfo, toRunPrefs, useClaudeInfo, usePrefs, type ClaudeInfo, type Prefs } from "./useClaude";
+import { fetchClaudeInfo, toRunPrefs, useClaudeInfo, useLocalLlm, usePrefs, type ClaudeInfo, type Prefs } from "./useClaude";
 import { EFFORTS, MODES, MODE_LABELS, isMode, nextMode, type Mode } from "@/harness/controls";
 import { MAX_IMAGES, MAX_IMAGE_B64, type ImageAttachment } from "@/harness/images";
 import styles from "./console.module.css";
@@ -52,6 +52,7 @@ const APP_COMMANDS: Cmd[] = [
 export function Console({ room, conversationId, sessionId, team, label, placeholder, hero, scene, suggestions = [] }: ConsoleProps) {
   const { t, dispatch, send, stop, answer, reset, conversationId: liveId } = useConversation(room, conversationId, sessionId);
   const info = useClaudeInfo();
+  const local = useLocalLlm();
   const meta = useAgentMeta();
   const [prefs, setPrefs] = usePrefs(info?.defaultMode);
   const [queue, setQueue] = useState<Queued[]>([]);
@@ -217,7 +218,7 @@ export function Console({ room, conversationId, sessionId, team, label, placehol
         return res?.ok ? ((await res.json()) as string[]) : [];
       }}
       onError={(message) => dispatch({ type: "error", message })}
-      status={<StatusLine label={label} t={t} prefs={prefs} models={info?.models ?? []} onMode={cycleMode} onModel={setModel} onEffort={(effort) => setPrefs({ effort })} />}
+      status={<StatusLine label={label} t={t} prefs={prefs} local={local?.enabled ? local.model : null} models={info?.models ?? []} onMode={cycleMode} onModel={setModel} onEffort={(effort) => setPrefs({ effort })} />}
     />
   );
 
@@ -562,8 +563,8 @@ function readImage(file: File): Promise<Attachment> {
   });
 }
 
-function StatusLine({ label, t, prefs, models, onMode, onModel, onEffort }: {
-  label: string; t: Transcript; prefs: Prefs; models: ClaudeInfo["models"];
+function StatusLine({ label, t, prefs, local, models, onMode, onModel, onEffort }: {
+  label: string; t: Transcript; prefs: Prefs; local: string | null; models: ClaudeInfo["models"];
   onMode: () => void; onModel: (m: string) => void; onEffort: (e: Prefs["effort"]) => void;
 }) {
   const cwd = t.cwd ? t.cwd.replace(/^.*[\\/](?=[^\\/]+[\\/]?$)/, "…/") : "";
@@ -572,11 +573,12 @@ function StatusLine({ label, t, prefs, models, onMode, onModel, onEffort }: {
       <button type="button" className={styles.modeButton} data-mode={prefs.mode} onClick={onMode} title="Permission mode (Shift+Tab)">
         {MODE_LABELS[prefs.mode]}
       </button>
-      <select className={styles.picker} value={prefs.model} onChange={(e) => onModel(e.target.value)} aria-label="Model">
+      {local && <a href="/local-llm" className={styles.localBadge} title="Agents run on Ollama. Change it on the Local LLM page.">local · {local}</a>}
+      <select className={styles.picker} value={prefs.model} onChange={(e) => onModel(e.target.value)} aria-label="Model" disabled={!!local} hidden={!!local}>
         <option value="">{t.model ? t.model.replace(/^claude-/, "") : "model: default"}</option>
         {models.map((m) => <option key={m.value} value={m.value}>{m.displayName || m.value}</option>)}
       </select>
-      <select className={styles.picker} value={prefs.effort} onChange={(e) => onEffort(e.target.value as Prefs["effort"])} aria-label="Effort">
+      <select className={styles.picker} hidden={!!local} value={prefs.effort} onChange={(e) => onEffort(e.target.value as Prefs["effort"])} aria-label="Effort">
         <option value="">effort: auto</option>
         {EFFORTS.map((e) => <option key={e} value={e}>effort: {e}</option>)}
       </select>

@@ -41,3 +41,17 @@
   .check { grid-template-columns: 1.4ch minmax(0, 1fr); }
   .check .muted { grid-column: 2; }
 }
+
+/* Usage */
+.usageGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
+.meter { margin-bottom: 12px; }
+.meterTop { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 4px; }
+.bar { height: 8px; border-radius: 999px; background: var(--raised); overflow: hidden; }
+.bar span { display: block; height: 100%; background: var(--blue); border-radius: 999px; }
+.bar span[data-level="mid"] { background: var(--warn); }
+.bar span[data-level="high"] { background: var(--err); }
+.table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 12.5px; }
+.table th { text-align: left; color: var(--muted); font-weight: 400; border-bottom: 1px solid var(--line); padding: 3px 0; }
+.table td { padding: 3px 0; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
+.row dd a { color: var(--blue-text); text-decoration: underline; }
+@media (max-width: 767px) { .usageGrid { grid-template-columns: minmax(0, 1fr); } }

@@ -548,3 +548,55 @@ test("Laboratory: pick the team, their mascots load above the prompt, and they r
   await expect(page.getByText("The Tutor reporting.")).toBeVisible();
   await expect(page.getByText("Done. Fake run finished.")).toBeVisible({ timeout: 20_000 });
 });
+
+test("pin a chat: it stays at the top under Pinned, survives a reload, and can be unpinned", async ({ page }) => {
+  await page.goto("/");
+  const nav = page.getByRole("navigation", { name: "Main" });
+  await nav.getByRole("button", { name: /^History/ }).click();
+  await nav.getByRole("button", { name: "Pin Fix login bug" }).click();
+  const pinned = nav.getByRole("list", { name: "Pinned" });
+  await expect(pinned.getByRole("link", { name: /Fix login bug/ })).toBeVisible();
+  await nav.getByRole("button", { name: /^History/ }).click();
+  await page.reload();
+  await expect(nav.getByRole("list", { name: "Pinned" }).getByRole("link", { name: /Fix login bug/ })).toBeVisible();
+  await nav.getByRole("list", { name: "Pinned" }).getByRole("button", { name: "Unpin Fix login bug" }).click();
+  await expect(nav.getByRole("list", { name: "Pinned" })).toHaveCount(0);
+});
+
+test("About explains what Gabo is", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "About" }).click();
+  await expect(page.getByRole("heading", { name: "About Gabo" })).toBeVisible();
+  await expect(page.getByText(/multi-agent harness/i).first()).toBeVisible();
+  await expect(page.locator("main")).toContainText("Laboratory");
+});
+
+test("Switch to Local LLM: guide, Ollama status, pick a model, test, switch on — runs use it", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Local LLM" }).click();
+  await expect(page.getByRole("heading", { name: "Switch to Local LLM" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Setup guide" })).toContainText("ollama pull");
+  await expect(page.getByRole("region", { name: "Ollama" })).toContainText("running");
+  await page.getByLabel("Model", { exact: true }).selectOption("qwen3-coder:30b");
+  await page.getByRole("button", { name: "Test model" }).click();
+  await expect(page.getByText("OK (fake qwen3-coder:30b)")).toBeVisible();
+  await page.getByRole("switch", { name: "Use the local model for all agents" }).click();
+  await expect(page.getByRole("switch", { name: "Use the local model for all agents" })).toHaveAttribute("aria-checked", "true");
+  await page.goto("/");
+  await expect(page.getByText("local · qwen3-coder:30b")).toBeVisible();
+  await page.locator("#prompt-input").fill("hello local");
+  await page.keyboard.press("Enter");
+  await expect(page.getByText(/model qwen3-coder:30b \(local\)/)).toBeVisible();
+  await page.goto("/local-llm");
+  await page.getByRole("switch", { name: "Use the local model for all agents" }).click();
+  await expect(page.getByRole("switch", { name: "Use the local model for all agents" })).toHaveAttribute("aria-checked", "false");
+});
+
+test("Status shows usage: plan meters and Gabo's own token log", async ({ page }) => {
+  await page.goto("/status");
+  const usage = page.getByRole("region", { name: "Usage" });
+  await expect(usage).toContainText("Current session");
+  await expect(usage).toContainText("42%");
+  await expect(usage).toContainText("Today");
+  await expect(usage).toContainText("Last 7 days");
+});
