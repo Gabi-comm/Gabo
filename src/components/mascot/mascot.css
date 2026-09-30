@@ -1,5 +1,6 @@
-/* Mascot hover animations. Each agent acts out its role; steps() keeps the pixel-art feel.
-   Triggers: hovering the mascot, or hovering / keyboard-focusing a link or button that contains it.
+/* Mascot animations. Each agent acts out its role; steps() keeps the pixel-art feel.
+   Mascots 40px and up loop on their own (data-animate="loop"); smaller ones (sidebar, chat labels)
+   play when hovered, or when a link / button around them is hovered or keyboard-focused.
    .m-held pivots on the hand and .m-hat on the head top (Mascot.tsx wraps them so 0,0 is the pivot). */
 
 .mascot { overflow: visible; }
@@ -9,61 +10,61 @@
 .mascot .m-face { transform-box: view-box; transform-origin: 0 0; }
 
 /* shared: a small hop */
-:is(.mascot:hover, a:is(:hover, :focus-visible) .mascot, button:is(:hover, :focus-visible) .mascot) .m-bob {
+:is(.mascot[data-animate="loop"], .mascot:hover, a:is(:hover, :focus-visible) .mascot, button:is(:hover, :focus-visible) .mascot) .m-bob {
   animation: m-hop 0.5s steps(2) infinite;
 }
 @keyframes m-hop { 50% { transform: translateY(-0.6px); } }
 
 /* ---- per agent ---- */
-:is(.mascot:hover, a:is(:hover, :focus-visible) .mascot, button:is(:hover, :focus-visible) .mascot)[data-kind="believer"] .m-held { animation: m-wave 0.6s steps(3) infinite; }
+:is(.mascot[data-animate="loop"], .mascot:hover, a:is(:hover, :focus-visible) .mascot, button:is(:hover, :focus-visible) .mascot)[data-kind="believer"] .m-held { animation: m-wave 0.6s steps(3) infinite; }
 @keyframes m-wave { 0%, 100% { transform: rotate(0deg); } 33% { transform: rotate(-14deg); } 66% { transform: rotate(8deg); } }
 
-:is(.mascot:hover, a:is(:hover, :focus-visible) .mascot, button:is(:hover, :focus-visible) .mascot)[data-kind="skeptic"] .m-held { animation: m-inspect 1.2s steps(4) infinite; }
-:is(.mascot:hover, a:is(:hover, :focus-visible) .mascot, button:is(:hover, :focus-visible) .mascot)[data-kind="skeptic"] .m-face { animation: m-squint 1.2s steps(2) infinite; }
+:is(.mascot[data-animate="loop"], .mascot:hover, a:is(:hover, :focus-visible) .mascot, button:is(:hover, :focus-visible) .mascot)[data-kind="skeptic"] .m-held { animation: m-inspect 1.2s steps(4) infinite; }
+:is(.mascot[data-animate="loop"], .mascot:hover, a:is(:hover, :focus-visible) .mascot, button:is(:hover, :focus-visible) .mascot)[data-kind="skeptic"] .m-face { animation: m-squint 1.2s steps(2) infinite; }
 @keyframes m-inspect { 0%, 100% { transform: translate(0, 0); } 40%, 70% { transform: translate(-1.6px, -3.4px); } }
 @keyframes m-squint { 50% { transform: translateY(0.4px); } }
 
-:is(.mascot:hover, a:is(:hover, :focus-visible) .mascot, button:is(:hover, :focus-visible) .mascot)[data-kind="investor"] .m-held { animation: m-coin 0.6s steps(4) infinite; }
-:is(.mascot:hover, a:is(:hover, :focus-visible) .mascot, button:is(:hover, :focus-visible) .mascot)[data-kind="investor"] .m-hat { animation: m-tip 1.2s steps(2) infinite; }
+:is(.mascot[data-animate="loop"], .mascot:hover, a:is(:hover, :focus-visible) .mascot, button:is(:hover, :focus-visible) .mascot)[data-kind="investor"] .m-held { animation: m-coin 0.6s steps(4) infinite; }
+:is(.mascot[data-animate="loop"], .mascot:hover, a:is(:hover, :focus-visible) .mascot, button:is(:hover, :focus-visible) .mascot)[data-kind="investor"] .m-hat { animation: m-tip 1.2s steps(2) infinite; }
 @keyframes m-coin { 0%, 100% { transform: translateY(0) scaleX(1); } 25% { transform: translateY(-1.5px) scaleX(0.3); } 50% { transform: translateY(-2.5px) scaleX(-1); } 75% { transform: translateY(-1.5px) scaleX(0.3); } }
 @keyframes m-tip { 50% { transform: translateY(-0.8px) rotate(-8deg); } }
 
-:is(.mascot:hover, a:is(:hover, :focus-visible) .mascot, button:is(:hover, :focus-visible) .mascot)[data-kind="judge"] .m-held { animation: m-gavel 0.5s steps(3) infinite; }
+:is(.mascot[data-animate="loop"], .mascot:hover, a:is(:hover, :focus-visible) .mascot, button:is(:hover, :focus-visible) .mascot)[data-kind="judge"] .m-held { animation: m-gavel 0.5s steps(3) infinite; }
 @keyframes m-gavel { 0%, 100% { transform: rotate(0deg); } 40% { transform: rotate(-38deg); } 70% { transform: rotate(12deg); } }
 
-:is(.mascot:hover, a:is(:hover, :focus-visible) .mascot, button:is(:hover, :focus-visible) .mascot)[data-kind="designer"] .m-held { animation: m-brush 0.8s steps(4) infinite; }
-:is(.mascot:hover, a:is(:hover, :focus-visible) .mascot, button:is(:hover, :focus-visible) .mascot)[data-kind="designer"] .m-hat { animation: m-beret 1.6s steps(2) infinite; }
+:is(.mascot[data-animate="loop"], .mascot:hover, a:is(:hover, :focus-visible) .mascot, button:is(:hover, :focus-visible) .mascot)[data-kind="designer"] .m-held { animation: m-brush 0.8s steps(4) infinite; }
+:is(.mascot[data-animate="loop"], .mascot:hover, a:is(:hover, :focus-visible) .mascot, button:is(:hover, :focus-visible) .mascot)[data-kind="designer"] .m-hat { animation: m-beret 1.6s steps(2) infinite; }
 @keyframes m-brush { 0%, 100% { transform: rotate(-18deg); } 50% { transform: rotate(18deg) translateX(0.6px); } }
 @keyframes m-beret { 50% { transform: rotate(7deg); } }
 
-:is(.mascot:hover, a:is(:hover, :focus-visible) .mascot, button:is(:hover, :focus-visible) .mascot)[data-kind="coder"] .m-held { animation: m-type 0.24s steps(2) infinite; }
-:is(.mascot:hover, a:is(:hover, :focus-visible) .mascot, button:is(:hover, :focus-visible) .mascot)[data-kind="coder"] .m-hat { animation: m-beat 0.48s steps(2) infinite; }
+:is(.mascot[data-animate="loop"], .mascot:hover, a:is(:hover, :focus-visible) .mascot, button:is(:hover, :focus-visible) .mascot)[data-kind="coder"] .m-held { animation: m-type 0.24s steps(2) infinite; }
+:is(.mascot[data-animate="loop"], .mascot:hover, a:is(:hover, :focus-visible) .mascot, button:is(:hover, :focus-visible) .mascot)[data-kind="coder"] .m-hat { animation: m-beat 0.48s steps(2) infinite; }
 @keyframes m-type { 50% { transform: translateY(-0.45px); } }
 @keyframes m-beat { 50% { transform: translateY(0.3px) scaleX(1.04); } }
 
-:is(.mascot:hover, a:is(:hover, :focus-visible) .mascot, button:is(:hover, :focus-visible) .mascot)[data-kind="tester"] .m-held { animation: m-swoop 0.9s steps(4) infinite; }
+:is(.mascot[data-animate="loop"], .mascot:hover, a:is(:hover, :focus-visible) .mascot, button:is(:hover, :focus-visible) .mascot)[data-kind="tester"] .m-held { animation: m-swoop 0.9s steps(4) infinite; }
 @keyframes m-swoop { 0%, 100% { transform: rotate(0deg); } 45% { transform: rotate(-65deg); } 70% { transform: rotate(18deg); } }
 
-:is(.mascot:hover, a:is(:hover, :focus-visible) .mascot, button:is(:hover, :focus-visible) .mascot)[data-kind="researcher"] .m-held { animation: m-read 1.4s steps(4) infinite; }
-:is(.mascot:hover, a:is(:hover, :focus-visible) .mascot, button:is(:hover, :focus-visible) .mascot)[data-kind="researcher"] .m-face { animation: m-glint 1.4s steps(2) infinite; }
+:is(.mascot[data-animate="loop"], .mascot:hover, a:is(:hover, :focus-visible) .mascot, button:is(:hover, :focus-visible) .mascot)[data-kind="researcher"] .m-held { animation: m-read 1.4s steps(4) infinite; }
+:is(.mascot[data-animate="loop"], .mascot:hover, a:is(:hover, :focus-visible) .mascot, button:is(:hover, :focus-visible) .mascot)[data-kind="researcher"] .m-face { animation: m-glint 1.4s steps(2) infinite; }
 @keyframes m-read { 0%, 100% { transform: translate(0, 0) rotate(0deg); } 50% { transform: translate(-0.8px, -2.2px) rotate(-10deg); } }
 @keyframes m-glint { 50% { transform: translateY(-0.3px); } }
 
-:is(.mascot:hover, a:is(:hover, :focus-visible) .mascot, button:is(:hover, :focus-visible) .mascot)[data-kind="tutor"] .m-held { animation: m-point 0.7s steps(3) infinite; }
-:is(.mascot:hover, a:is(:hover, :focus-visible) .mascot, button:is(:hover, :focus-visible) .mascot)[data-kind="tutor"] .m-hat { animation: m-tassel 0.7s steps(2) infinite; }
+:is(.mascot[data-animate="loop"], .mascot:hover, a:is(:hover, :focus-visible) .mascot, button:is(:hover, :focus-visible) .mascot)[data-kind="tutor"] .m-held { animation: m-point 0.7s steps(3) infinite; }
+:is(.mascot[data-animate="loop"], .mascot:hover, a:is(:hover, :focus-visible) .mascot, button:is(:hover, :focus-visible) .mascot)[data-kind="tutor"] .m-hat { animation: m-tassel 0.7s steps(2) infinite; }
 @keyframes m-point { 0%, 100% { transform: rotate(0deg); } 50% { transform: rotate(32deg); } }
 @keyframes m-tassel { 50% { transform: translateX(0.3px); } }
 
-:is(.mascot:hover, a:is(:hover, :focus-visible) .mascot, button:is(:hover, :focus-visible) .mascot)[data-kind="caveman"] .m-held { animation: m-club 0.6s steps(3) infinite; }
-:is(.mascot:hover, a:is(:hover, :focus-visible) .mascot, button:is(:hover, :focus-visible) .mascot)[data-kind="caveman"] .m-bob { animation: m-stomp 0.6s steps(2) infinite; }
+:is(.mascot[data-animate="loop"], .mascot:hover, a:is(:hover, :focus-visible) .mascot, button:is(:hover, :focus-visible) .mascot)[data-kind="caveman"] .m-held { animation: m-club 0.6s steps(3) infinite; }
+:is(.mascot[data-animate="loop"], .mascot:hover, a:is(:hover, :focus-visible) .mascot, button:is(:hover, :focus-visible) .mascot)[data-kind="caveman"] .m-bob { animation: m-stomp 0.6s steps(2) infinite; }
 @keyframes m-club { 0%, 100% { transform: rotate(-55deg); } 60% { transform: rotate(35deg); } }
 @keyframes m-stomp { 50% { transform: translateY(-1px); } }
 
-:is(.mascot:hover, a:is(:hover, :focus-visible) .mascot, button:is(:hover, :focus-visible) .mascot)[data-kind="planner"] .m-held { animation: m-clip 1s steps(4) infinite; }
+:is(.mascot[data-animate="loop"], .mascot:hover, a:is(:hover, :focus-visible) .mascot, button:is(:hover, :focus-visible) .mascot)[data-kind="planner"] .m-held { animation: m-clip 1s steps(4) infinite; }
 @keyframes m-clip { 0%, 100% { transform: translate(0, 0) rotate(0deg); } 50% { transform: translate(-0.4px, -1.6px) rotate(-12deg); } }
 
-:is(.mascot:hover, a:is(:hover, :focus-visible) .mascot, button:is(:hover, :focus-visible) .mascot)[data-kind="emperor"] .m-held { animation: m-toast 1s steps(4) infinite; }
-:is(.mascot:hover, a:is(:hover, :focus-visible) .mascot, button:is(:hover, :focus-visible) .mascot)[data-kind="emperor"] .m-hat { animation: m-crown 1s steps(2) infinite; }
+:is(.mascot[data-animate="loop"], .mascot:hover, a:is(:hover, :focus-visible) .mascot, button:is(:hover, :focus-visible) .mascot)[data-kind="emperor"] .m-held { animation: m-toast 1s steps(4) infinite; }
+:is(.mascot[data-animate="loop"], .mascot:hover, a:is(:hover, :focus-visible) .mascot, button:is(:hover, :focus-visible) .mascot)[data-kind="emperor"] .m-hat { animation: m-crown 1s steps(2) infinite; }
 @keyframes m-toast { 0%, 100% { transform: translate(0, 0); } 50% { transform: translate(1px, -4.5px) rotate(-8deg); } }
 @keyframes m-crown { 50% { transform: translateY(-0.5px); } }
 

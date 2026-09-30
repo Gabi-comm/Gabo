@@ -154,23 +154,25 @@ test("the sidebar has no account footer", async ({ page }) => {
   await expect(page.getByText("Gabi-comm")).toHaveCount(0);
 });
 
-test("every agent mascot plays its own animation on hover", async ({ page }) => {
+test("mascots on the page loop their own animation; tiny sidebar ones wait for hover", async ({ page }) => {
   await page.goto("/agents");
   const rows = page.locator("main li a");
   await expect(rows).toHaveCount(12);
   const seen = new Set<string>();
   for (let i = 0; i < 12; i++) {
-    const row = rows.nth(i);
-    const svg = row.locator("svg.mascot");
-    const idle = await svg.evaluate((el) => el.getAnimations({ subtree: true }).length);
-    expect(idle).toBe(0);
-    await row.hover();
+    const svg = rows.nth(i).locator("svg.mascot");
     const names = await svg.evaluate((el) =>
       el.getAnimations({ subtree: true }).map((a) => (a as CSSAnimation).animationName).sort().join(","));
-    expect(names, await svg.getAttribute("data-kind") ?? "").not.toBe("");
+    expect(names, (await svg.getAttribute("data-kind")) ?? "").not.toBe("");
     seen.add(names);
   }
   expect(seen.size).toBe(12);
+
+  const sidebarJudge = page.getByRole("navigation", { name: "Main" }).locator('svg.mascot[data-kind="judge"]');
+  await page.mouse.move(900, 20);
+  expect(await sidebarJudge.evaluate((el) => el.getAnimations({ subtree: true }).length)).toBe(0);
+  await sidebarJudge.hover();
+  await expect.poll(() => sidebarJudge.evaluate((el) => el.getAnimations({ subtree: true }).length)).toBeGreaterThan(0);
 });
 
 test("sidebar toggles on desktop, remembers it, and Ctrl+B flips it", async ({ page }) => {

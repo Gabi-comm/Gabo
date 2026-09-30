@@ -85,10 +85,15 @@ export interface MascotProps extends ArtProps {
   size?: number;
   title?: string;
   className?: string;
+  /** "loop" plays the role animation continuously; "hover" waits for hover or focus. Default: loop from 40px up. */
+  animate?: "loop" | "hover";
 }
 
-/** A standalone mascot. It plays its role's animation when hovered, or when a link/button around it is. */
-export function Mascot({ size = 96, title, className, ...art }: MascotProps) {
+/** Below this size a loop would be visual noise (a sidebar of twelve bouncing icons), so it waits for hover. */
+const LOOP_MIN_SIZE = 40;
+
+/** A standalone mascot. It loops its role animation, or (when small) plays it on hover of itself or a link/button around it. */
+export function Mascot({ size = 96, title, className, animate, ...art }: MascotProps) {
   const kind = art.kind ?? "base";
   // Agents hold their prop out in front of them unless a pose is asked for.
   const pose = art.pose ?? (PROPS[kind].held ? "hold" : "stand");
@@ -97,6 +102,7 @@ export function Mascot({ size = 96, title, className, ...art }: MascotProps) {
     <svg
       className={`mascot${className ? ` ${className}` : ""}`}
       data-kind={kind}
+      data-animate={animate ?? (size >= LOOP_MIN_SIZE ? "loop" : "hover")}
       width={size}
       height={(size * VB_H) / VB_W}
       viewBox={`${VB_X} ${VB_Y} ${VB_W} ${VB_H}`}
