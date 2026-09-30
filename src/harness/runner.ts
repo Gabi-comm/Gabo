@@ -6,16 +6,18 @@ import { createMapper, type Decision, type UiEvent } from "./events";
 import { broker as defaultBroker, guardToolInput, sessionRuleKey, type PermissionBroker, type PermissionAsk } from "./permissions";
 import { rosterFor, workflowFor, type RoomId } from "./rooms";
 import { loadSpec, type ParsedSpec } from "./spec";
+import { loadOverrides, type AgentOverride, type Overrides } from "./overrides";
 import { summarizeTool } from "./events";
 import { QUICK_AGENTS, arenaSizeGuard, detectPython, ensureIdeaArena, withIdeaRubric } from "./arena";
 
 export const SKILL_READ_ROOTS = [path.join(os.homedir(), ".claude", "skills")];
 
-function agentPrompt(id: AgentId, spec: ParsedSpec): string {
+function agentPrompt(id: AgentId, spec: ParsedSpec, override?: AgentOverride): string {
   const parts = [
-    `You are ${AGENTS[id].name}, one agent on Gab's team. Your role, verbatim:`,
-    spec.agents[id],
+    `You are ${AGENTS[id].name}, one agent on Gab's team. Your role:`,
+    override?.prompt ?? spec.agents[id],
   ];
+  if (override?.goal) parts.push(`Gab's added goal for you: ${override.goal}`);
   if (id === "emperor") parts.push(spec.ideaRubric, spec.emperorUsage);
   parts.push("Skill rule (applies to you):", spec.skillScout);
   return parts.join("\n\n");
@@ -29,15 +31,17 @@ export interface BuildOptionsInput {
   skillsByAgent?: Partial<Record<AgentId, string[]>>;
   /** Room-specific run notes appended after the workflow (e.g. where the arena skill lives). */
   extraWorkflow?: string;
+  /** Gab's prompt and goal edits from the Settings page. */
+  overrides?: Overrides;
 }
 
 /** Everything a room run passes to query(), minus the live callbacks. */
-export function buildOptions({ room, workspace, spec, sessionId, skillsByAgent = {}, extraWorkflow }: BuildOptionsInput): Options {
+export function buildOptions({ room, workspace, spec, sessionId, skillsByAgent = {}, extraWorkflow, overrides = {} }: BuildOptionsInput): Options {
   const agents: Record<string, AgentDefinition> = {};
   for (const id of rosterFor(room)) {
     agents[id] = {
       description: `${AGENTS[id].name}: ${AGENTS[id].tagline}`,
-      prompt: agentPrompt(id, spec),
+      prompt: agentPrompt(id, spec, overrides[id]),
       ...(skillsByAgent[id]?.length ? { skills: skillsByAgent[id] } : {}),
     };
   }
@@ -54,7 +58,11 @@ export function buildOptions({ room, workspace, spec, sessionId, skillsByAgent =
     agentProgressSummaries: true,
     settingSources: ["user", "project"],
     permissionMode: "default",
-    systemPrompt: { type: "preset", preset: "claude_code", append: `${workflowFor(room)}\nThe user is Gab. Workspace: ${workspace}` },
+    systemPrompt: {
+      type: "preset",
+      preset: "claude_code",
+      append: [workflowFor(room), extraWorkflow, `The user is Gab. Workspace: ${workspace}`].filter(Boolean).join("\n"),
+    },
   };
 }
 
@@ -148,7 +156,7 @@ export async function runRoom(input: RunInput): Promise<void> {
     emit({ type: "permission_request", requestId: req.requestId, tool: req.tool, summary: req.summary });
 
   const options: Options = {
-    ...buildOptions({ room, workspace, spec, sessionId, skillsByAgent, extraWorkflow }),
+    ...buildOptions({ room, workspace, spec, sessionId, skillsByAgent, extraWorkflow, overrides: loadOverrides() }),
     abortController,
     canUseTool: makeCanUseTool({ runId, workspace, broker: defaultBroker, sessionRules, onAsk }),
     hooks: {

@@ -60,7 +60,7 @@ export function Sidebar({ onClose }: { onClose: () => void }) {
           <Mascot size={30} sticker={false} title="Gabo" />
           <span>gabo</span>
         </Link>
-        <button className={styles.closeButton} onClick={onClose} aria-label="Close menu"><Icon name="close" /></button>
+        <button className={styles.closeButton} onClick={onClose} aria-label="Hide sidebar" title="Hide sidebar (Ctrl+B)"><Icon name="sidebar" /></button>
       </div>
 
       <Link href={roomHref(currentRoom)} className={styles.newButton} onClick={() => window.dispatchEvent(new Event("gabo:new"))}>
@@ -125,6 +125,11 @@ export function Sidebar({ onClose }: { onClose: () => void }) {
           </li>
         ))}
       </ul>
+      <div className={styles.footer}>
+        <Link href="/settings" className={styles.navItem} aria-current={pathname === "/settings" ? "page" : undefined}>
+          <Icon name="settings" /> Settings
+        </Link>
+      </div>
     </nav>
   );
 }

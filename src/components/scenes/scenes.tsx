@@ -67,7 +67,8 @@ const OFFICE_S = 0.8;
 const START_X = -16;
 const DESK_X = 30.3;
 const STAND_Y = 27 - 14 * OFFICE_S;
-const SIT_Y = 21 - 11 * OFFICE_S;
+/** Seat top at y=21 meets the bottom of the thighs (row 12 of the grid). */
+const SIT_Y = 21 - 12 * OFFICE_S;
 
 export function OfficeScene() {
   const reduced = useReducedMotion();
@@ -94,9 +95,10 @@ export function OfficeScene() {
       {/* floor */}
       <line x1="0" y1="27.2" x2="90" y2="27.2" stroke={C.lineStrong} strokeWidth="0.3" />
       {/* chair */}
-      <rect x="33" y="14" width="1" height="7" fill={C.furniture} />
-      <rect x="33" y="21" width="12" height="1" fill={C.furnitureTop} />
-      <rect x="38.5" y="22" width="1" height="5" fill={C.furniture} />
+      <rect x="30.6" y="12.6" width="1.1" height="8.4" fill={C.furnitureTop} />
+      <rect x="30.6" y="21" width="12" height="1" fill={C.furnitureTop} />
+      <rect x="36" y="22" width="1" height="4.2" fill={C.furniture} />
+      <rect x="33.5" y="26.2" width="6" height="0.8" fill={C.furniture} />
       {/* monitor */}
       <rect x="55" y="8.5" width="12" height="8" rx="0.4" fill={C.furniture} />
       <rect x="55.8" y="9.3" width="10.4" height="6.4" fill={sitting ? C.screen : C.screenDim} className={styles.screen} />
@@ -117,7 +119,7 @@ export function OfficeScene() {
       <rect x="44" y="18.5" width="27" height="1.2" fill={C.furnitureTop} />
       <rect x="45" y="19.7" width="1" height="7.5" fill={C.furniture} />
       <rect x="69" y="19.7" width="1" height="7.5" fill={C.furniture} />
-      <rect x="47" y="17.9" width="6" height="0.6" fill="#55554f" />
+      <rect x="43.6" y="17.9" width="5.6" height="0.6" fill="#55554f" />
     </Scene>
   );
 }
@@ -160,7 +162,7 @@ export function LibraryIntro() {
       {/* stool */}
       <rect x="40" y="21" width="10" height="1" fill={C.furnitureTop} />
       <rect x="44.5" y="22" width="1" height="5" fill={C.furniture} />
-      <Figure kind="studying" pose={pose} x={37} y={21 - 11 * 0.8} s={0.8} />
+      <Figure kind="studying" pose={pose} x={37} y={21 - 12 * 0.8} s={0.8} />
       {/* table + lamp */}
       <rect x="50" y="18.5" width="30" height="1.2" fill={C.furnitureTop} />
       <rect x="51" y="19.7" width="1" height="7.5" fill={C.furniture} />
@@ -283,7 +285,7 @@ export function LibraryWidget({ pulled, active }: { pulled: AgentId[]; active: A
     <Scene viewBox="0 0 120 34" label={widgetLabel("Library", pulled, active)} className={styles.widget}>
       <Bookshelf x={2} y={1} w={116} h={12} />
       {pulled.map((a, i) => (
-        <WorkingAgent key={a} agent={a} i={i} n={pulled.length} active={active.includes(a)} frames={["sitRead", "sit", "sitRead", "sitRead"]} y={29 - 11 * W_S} />
+        <WorkingAgent key={a} agent={a} i={i} n={pulled.length} active={active.includes(a)} frames={["sitRead", "sit", "sitRead", "sitRead"]} y={29 - 12 * W_S} />
       ))}
       <rect x="2" y="26.5" width="116" height="1.2" fill={C.furnitureTop} />
       <rect x="4" y="27.7" width="1" height="6" fill={C.furniture} />
@@ -318,7 +320,7 @@ export function HackathonWidget({ pulled, active }: { pulled: AgentId[]; active:
           <g key={a}>
             <rect x={x + 10.5} y={17} width="6.5" height="5" rx="0.3" fill={C.furniture} />
             <rect x={x + 11} y={17.5} width="5.5" height="4" fill={on ? C.screen : C.screenDim} />
-            <WorkingAgent agent={a} i={i} n={n} active={on} frames={["sitType1", "sitType2"]} y={27 - 11 * W_S} />
+            <WorkingAgent agent={a} i={i} n={n} active={on} frames={["sitType1", "sitType2"]} y={27 - 12 * W_S} />
             <rect x={x + 8.5} y={24.2} width="10" height="0.8" fill={C.furnitureTop} />
             <rect x={x + 17} y={25} width="0.7" height="8.4" fill={C.furniture} />
           </g>

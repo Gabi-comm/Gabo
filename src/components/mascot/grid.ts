@@ -24,7 +24,8 @@ const ARM_DOWN: Rect[] = [[13, 7, 2, 1]];
 const LEGS_STAND: Rect[] = [[5, 11, 2, 3], [10, 11, 2, 3]];
 const LEGS_W1: Rect[] = [[4, 11, 2, 3], [11, 11, 2, 2]];
 const LEGS_W2: Rect[] = [[6, 11, 2, 2], [9, 11, 2, 3]];
-const LEGS_SIT: Rect[] = [[5, 11, 4, 1], [10, 11, 4, 1]];
+/** Seated, side view: thighs forward along the seat (row 11), shins hanging down in front of it. */
+const LEGS_SIT: Rect[] = [[5, 11, 3, 1], [7, 12, 1, 2], [10, 11, 3, 1], [12, 12, 1, 2]];
 
 /** Where a held prop anchors (grid coords) for each pose. */
 export const HAND: Record<Pose, readonly [number, number]> = {

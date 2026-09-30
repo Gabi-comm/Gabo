@@ -25,6 +25,7 @@
 .brand { display: flex; align-items: center; justify-content: space-between; padding: 4px 6px 12px; }
 .brandLink { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; letter-spacing: 0.02em; }
 .closeButton, .menuButton { display: none; background: none; border: 0; padding: 8px; border-radius: 8px; color: var(--muted); }
+.closeButton { display: grid; place-items: center; }
 .closeButton:hover, .menuButton:hover { color: var(--text); background: var(--raised); }
 
 .newButton, .navItem {
@@ -56,7 +57,17 @@
 .linkButton { background: none; border: 0; color: var(--blue-text); padding: 0; text-decoration: underline; }
 
 
+.footer { position: sticky; bottom: 0; background: var(--bg); border-top: 1px solid var(--line); padding: 8px 0; margin-top: 8px; }
+
 .scrim { display: none; }
+
+/* Desktop: collapsed sidebar, reopened from the top-left button. */
+@media (min-width: 768px) {
+  .shell[data-collapsed="true"] { grid-template-columns: minmax(0, 1fr); }
+  .shell[data-collapsed="true"] .sidebar { display: none; }
+  .shell[data-collapsed="true"] .menuButton { display: grid; place-items: center; position: fixed; top: 10px; left: 10px; z-index: 10; background: var(--bg); }
+  .shell[data-collapsed="true"] .main { padding-left: 44px; }
+}
 
 @media (max-width: 767px) {
   .shell { grid-template-columns: minmax(0, 1fr); }

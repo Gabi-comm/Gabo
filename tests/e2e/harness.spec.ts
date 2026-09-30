@@ -172,3 +172,45 @@ test("every agent mascot plays its own animation on hover", async ({ page }) => 
   }
   expect(seen.size).toBe(12);
 });
+
+test("sidebar toggles on desktop, remembers it, and Ctrl+B flips it", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto("/");
+  const nav = page.getByRole("navigation", { name: "Main" });
+  await expect(nav).toBeVisible();
+  await page.getByRole("button", { name: "Hide sidebar" }).click();
+  await expect(nav).toBeHidden();
+  await page.reload();
+  await expect(nav).toBeHidden();
+  await page.getByRole("button", { name: "Show sidebar" }).click();
+  await expect(nav).toBeVisible();
+  await page.keyboard.press("Control+b");
+  await expect(nav).toBeHidden();
+  await page.keyboard.press("Control+b");
+  await expect(nav).toBeVisible();
+});
+
+test("settings: edit an agent's prompt and goal, it persists, and reset restores the spec", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Settings" }).click();
+  await expect(page).toHaveURL(/\/settings/);
+  await page.getByRole("tab", { name: /Judge/ }).click();
+  const role = page.getByLabel("Role prompt");
+  const goal = page.getByLabel("Added goal");
+  await expect(role).toHaveValue(/BUILD, FIX FIRST, or KILL/);
+  await goal.fill("Keep every ruling under 50 words.");
+  await role.fill("You are a fast judge. Rule in one line.");
+  await expect(page.getByText("Unsaved changes")).toBeVisible();
+  await page.keyboard.press("Control+s");
+  await expect(page.getByText(/^Saved/)).toBeVisible();
+  await page.reload();
+  await page.getByRole("tab", { name: /Judge/ }).click();
+  await expect(page.getByLabel("Added goal")).toHaveValue("Keep every ruling under 50 words.");
+  await expect(page.getByLabel("Role prompt")).toHaveValue("You are a fast judge. Rule in one line.");
+  await expect(page.getByRole("tab", { name: /Judge/ })).toContainText("edited");
+  page.once("dialog", (d) => d.accept());
+  await page.getByRole("button", { name: "Reset to spec" }).click();
+  await expect(page.getByLabel("Role prompt")).toHaveValue(/BUILD, FIX FIRST, or KILL/);
+  await expect(page.getByLabel("Added goal")).toHaveValue("");
+  await expect(page.getByRole("tab", { name: /Judge/ })).not.toContainText("edited");
+});
