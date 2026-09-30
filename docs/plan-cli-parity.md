@@ -31,3 +31,12 @@ CLI feature available.
 6. **MCP panel** — `/mcp` lists servers with status, reconnect and enable/disable.
 
 Out of scope for now: terminal-only features (vim mode, `/terminal-setup`, `/config` TUI), IDE integrations.
+
+## Status (2026-09-30)
+
+Done, with tests: phases 1–5, plus `/mcp` as a status list. Verified live: real history opens (57-item session),
+`/context` passes through (rendered table, 0 tokens), an image round-trips ("Red."), 202 commands / 23 MCP / Claude Pro
+detected, the app starts in the CLI's defaultMode (auto).
+
+Not yet: MCP reconnect/enable toggles (only affect a throwaway process), `/rewind` file checkpoints, `!` bash mode,
+`#` memory shortcut, background task panel, thinking display.
