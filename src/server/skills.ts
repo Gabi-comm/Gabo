@@ -1,8 +1,9 @@
 import path from "node:path";
-import type { AgentId } from "@/harness/agents";
+import type { AgentKey } from "@/harness/agents";
 import type { UiEvent } from "@/harness/events";
 import { loadSpec } from "@/harness/spec";
 import { rosterFor, type RoomId } from "@/harness/rooms";
+import type { CustomAgent } from "@/harness/customAgents";
 import { SKILL_READ_ROOTS } from "@/harness/runner";
 import { fetchCatalog, listLocal, type CatalogSkill } from "@/harness/skills/catalog";
 import { workspaceSkillsDir } from "@/harness/skills/install";
@@ -20,9 +21,11 @@ export interface PrepareSkillsInput {
   firstTurn: boolean;
   emit: (e: UiEvent) => void;
   signal?: AbortSignal;
+  team?: string[];
+  customAgents?: CustomAgent[];
 }
 
-type SkillMap = Partial<Record<AgentId, string[]>>;
+type SkillMap = Partial<Record<AgentKey, string[]>>;
 
 function onlyInstalled(map: SkillMap, installed: Set<string>): SkillMap {
   return Object.fromEntries(Object.entries(map).map(([a, s]) => [a, (s ?? []).filter((n) => installed.has(n))]));
@@ -62,13 +65,13 @@ async function askScout(prompt: string, cwd: string, signal?: AbortSignal): Prom
  * The skill-scout rule from the spec: before the first task of a chat, each pulled agent keeps only the
  * skills that fit its role and the task. Later turns reuse the pick (plus anything downloaded since).
  */
-export async function prepareSkills({ conversationId, room, prompt, workspace, firstTurn, emit, signal }: PrepareSkillsInput): Promise<SkillMap> {
+export async function prepareSkills({ conversationId, room, prompt, workspace, firstTurn, emit, signal, team, customAgents = [] }: PrepareSkillsInput): Promise<SkillMap> {
   const local = listLocal([...SKILL_READ_ROOTS, workspaceSkillsDir(workspace)]);
   const installed = new Set(local.map((s) => s.name));
   const saved = sessions.get(conversationId)?.skills;
   if (!firstTurn && saved) return onlyInstalled(saved, installed);
 
-  const roster = rosterFor(room);
+  const roster = rosterFor(room, team);
   let catalog: CatalogSkill[] = [];
   let note: string | undefined;
   try {
@@ -82,7 +85,7 @@ export async function prepareSkills({ conversationId, room, prompt, workspace, f
 
   let reply = "";
   try {
-    reply = await askScout(buildScoutPrompt(prompt, roster, [...pool.values()], loadSpec().skillScout), workspace, signal);
+    reply = await askScout(buildScoutPrompt(prompt, roster, [...pool.values()], loadSpec().skillScout, customAgents), workspace, signal);
   } catch {
     note = "The skill scout didn't answer, so agents run without extra skills this time.";
   }

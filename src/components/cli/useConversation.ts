@@ -89,7 +89,7 @@ export function useConversation(room: RoomId, initialId?: string, sessionId?: st
     return () => window.removeEventListener("gabo:new", reset);
   }, [reset]);
 
-  const send = useCallback(async (prompt: string, opts: { full?: boolean; prefs?: RunPrefs; images?: ImageAttachment[] } = {}) => {
+  const send = useCallback(async (prompt: string, opts: { full?: boolean; prefs?: RunPrefs; images?: ImageAttachment[]; team?: string[] } = {}) => {
     if (busy.current) return;
     busy.current = true;
     const gen = generation.current;
@@ -107,7 +107,7 @@ export function useConversation(room: RoomId, initialId?: string, sessionId?: st
       const res = await fetch("/api/run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ conversationId: id, room, prompt, full: opts.full === true, prefs: opts.prefs, ...(opts.images?.length ? { images: opts.images } : {}) }),
+        body: JSON.stringify({ conversationId: id, room, prompt, full: opts.full === true, prefs: opts.prefs, ...(opts.images?.length ? { images: opts.images } : {}), ...(opts.team ? { team: opts.team } : {}) }),
         signal: ctrl.signal,
       });
       if (!res.ok || !res.body) {

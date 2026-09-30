@@ -1,14 +1,15 @@
 "use client";
 
 import { useState } from "react";
-import { AGENTS } from "@/harness/agents";
+import type { AgentKey } from "@/harness/agents";
+import type { AgentInfo } from "@/harness/agentMeta";
 import type { Item } from "./transcript";
 import styles from "./console.module.css";
 
 type SkillsItem = Extract<Item, { kind: "skills" }>;
 
 /** Skill scout output: one line per agent, plus a Download prompt for skills that aren't installed. */
-export function SkillCard({ item, onDone }: { item: SkillsItem; onDone: (installed: string[]) => void }) {
+export function SkillCard({ item, meta, onDone }: { item: SkillsItem; meta: (id: AgentKey) => AgentInfo; onDone: (installed: string[]) => void }) {
   const [state, setState] = useState<"idle" | "busy" | "error">("idle");
   const [error, setError] = useState("");
   const settled = item.installed !== undefined || item.dismissed;
@@ -38,7 +39,7 @@ export function SkillCard({ item, onDone }: { item: SkillsItem; onDone: (install
       <ul>
         {item.lines.map((l) => (
           <li key={l.agent}>
-            <span className={styles.skillAgent}>{AGENTS[l.agent].name.replace("The ", "")}</span>
+            <span className={styles.skillAgent}>{meta(l.agent).short}</span>
             {l.skills.length ? l.skills.join(", ") : "none"}
             {l.why && <span className={styles.via}> — {l.why}</span>}
           </li>
@@ -50,7 +51,7 @@ export function SkillCard({ item, onDone }: { item: SkillsItem; onDone: (install
             Recommended, not installed:{" "}
             {item.missing.map((m) => (
               <span key={m.name} className={styles.skillName} title={m.description}>
-                {m.name} <span className={styles.via}>({m.agents.map((a) => AGENTS[a].name.replace("The ", "")).join(", ")})</span>
+                {m.name} <span className={styles.via}>({m.agents.map((a) => meta(a).short).join(", ")})</span>
               </span>
             ))}
           </div>

@@ -16,10 +16,11 @@ export const SESSIONS_CHANGED = "gabo:sessions-changed";
 
 export { roomHref };
 
-const WORKSPACE: { room: "library" | "arena" | "hackathon"; icon: IconName }[] = [
+const WORKSPACE: { room: "library" | "arena" | "hackathon" | "laboratory"; icon: IconName }[] = [
   { room: "library", icon: "library" },
   { room: "arena", icon: "arena" },
   { room: "hackathon", icon: "hackathon" },
+  { room: "laboratory", icon: "lab" },
 ];
 const WORKSPACE_PATHS = WORKSPACE.map((w) => `/${w.room}`);
 const HISTORY_OPEN_KEY = "gabo:history-open";

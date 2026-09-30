@@ -41,7 +41,8 @@ describe("custom agent store", () => {
     const a = createCustomAgent(f, draft);
     expect(a.id).toBe("x-data-wizard");
     expect(loadCustomAgents(f)).toHaveLength(1);
-    const b = createCustomAgent(f, { ...draft, name: "Data Wizard" });
+    expect(() => createCustomAgent(f, draft)).toThrow(/already have/);
+    const b = createCustomAgent(f, { ...draft, name: "Data Wizard 2" });
     expect(b.id).toBe("x-data-wizard-2");
     const u = updateCustomAgent(f, a.id, { ...draft, goal: "Two chart ideas." });
     expect(u).toMatchObject({ id: "x-data-wizard", goal: "Two chart ideas." });

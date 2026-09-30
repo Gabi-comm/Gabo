@@ -130,7 +130,7 @@ export function AgentSettings({ initialAgent }: { initialAgent?: string }) {
 
   if (loadError) {
     return (
-      <div className={styles.page}>
+      <div className={styles.panel}>
         <div className={styles.error} role="alert">
           Couldn&apos;t load the agents: {loadError} <button className={styles.linkButton} onClick={load}>Retry</button>
         </div>
@@ -139,9 +139,8 @@ export function AgentSettings({ initialAgent }: { initialAgent?: string }) {
   }
 
   return (
-    <div className={styles.page}>
+    <div className={styles.panel}>
       <header className={styles.head}>
-        <h1>Settings</h1>
         <p>Each agent&apos;s role prompt and an added goal. Edits save to <code>config/agent-overrides.json</code>; the text in <code>docs/spec.md</code> stays the default. They apply from the next message.</p>
       </header>
 

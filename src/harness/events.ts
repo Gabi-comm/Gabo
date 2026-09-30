@@ -1,9 +1,9 @@
-import { isAgentId, type AgentId } from "./agents";
+import { isAgentId, type AgentKey } from "./agents";
 
 export type Decision = "allow" | "allow_session" | "deny";
 
-export interface SkillLine { agent: AgentId; skills: string[]; why: string }
-export interface SkillRec { name: string; description: string; agents: AgentId[] }
+export interface SkillLine { agent: AgentKey; skills: string[]; why: string }
+export interface SkillRec { name: string; description: string; agents: AgentKey[] }
 
 export interface Todo { content: string; status: "pending" | "in_progress" | "completed"; activeForm?: string }
 export interface Diff { path: string; removed?: string; added?: string }
@@ -13,12 +13,12 @@ export type AskKind = "tool" | "question" | "plan";
 /** Everything the browser receives over the run stream. */
 export type UiEvent =
   | { type: "session"; sessionId: string; model: string; cwd: string }
-  | { type: "text"; delta: string; agent: AgentId | null }
-  | { type: "tool_start"; id: string; name: string; summary: string; agent: AgentId | null; todos?: Todo[]; diff?: Diff }
+  | { type: "text"; delta: string; agent: AgentKey | null }
+  | { type: "tool_start"; id: string; name: string; summary: string; agent: AgentKey | null; todos?: Todo[]; diff?: Diff }
   | { type: "tool_result"; id: string; ok: boolean; preview: string; lines: number }
-  | { type: "agent_start"; agent: AgentId; toolUseId: string; description: string }
-  | { type: "agent_progress"; agent: AgentId; summary: string }
-  | { type: "agent_stop"; agent: AgentId; toolUseId: string; ok: boolean }
+  | { type: "agent_start"; agent: AgentKey; toolUseId: string; description: string }
+  | { type: "agent_progress"; agent: AgentKey; summary: string }
+  | { type: "agent_stop"; agent: AgentKey; toolUseId: string; ok: boolean }
   | { type: "permission_request"; requestId: string; tool: string; summary: string; kind?: AskKind; questions?: Question[]; plan?: string }
   | { type: "permission_resolved"; requestId: string; decision: Decision; answers?: Record<string, string> }
   | { type: "skills"; lines: SkillLine[]; missing: SkillRec[]; note?: string }
@@ -75,11 +75,12 @@ function resultText(content: unknown): string {
  * Stateful mapper from Agent SDK messages to UI events. One per run: it remembers which
  * tool_use ids are subagents so nested text and results are attributed to the right mascot.
  */
-export function createMapper() {
-  const subagentByToolUse = new Map<string, AgentId>();
+/** `known` says which subagent ids are Gab's agents (built-in or custom) so their words get their mascot. */
+export function createMapper(known: (id: unknown) => boolean = isAgentId) {
+  const subagentByToolUse = new Map<string, AgentKey>();
   const streamedFor = new Set<string>();
   const key = (parent: string | null | undefined) => parent ?? "main";
-  const agentOf = (parent: string | null | undefined): AgentId | null =>
+  const agentOf = (parent: string | null | undefined): AgentKey | null =>
     (parent && subagentByToolUse.get(parent)) || null;
 
   return function map(msg: Msg): UiEvent[] {
@@ -126,9 +127,9 @@ export function createMapper() {
             const id = String(b.id);
             const name = String(b.name);
             const input = (b.input ?? {}) as Record<string, unknown>;
-            if ((name === "Agent" || name === "Task") && isAgentId(input.subagent_type)) {
-              subagentByToolUse.set(id, input.subagent_type);
-              out.push({ type: "agent_start", agent: input.subagent_type, toolUseId: id, description: String(input.description ?? "") });
+            if ((name === "Agent" || name === "Task") && typeof input.subagent_type === "string" && known(input.subagent_type)) {
+              subagentByToolUse.set(id, input.subagent_type as AgentKey);
+              out.push({ type: "agent_start", agent: input.subagent_type as AgentKey, toolUseId: id, description: String(input.description ?? "") });
             } else if (name === "TodoWrite" && Array.isArray(input.todos)) {
               out.push({ type: "tool_start", id, name, summary: "Update Todos", agent, todos: input.todos as Todo[] });
             } else {

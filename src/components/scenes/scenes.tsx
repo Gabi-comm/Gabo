@@ -1,7 +1,10 @@
 "use client";
 
 import { useEffect, useState, type ReactNode } from "react";
-import { AGENTS, type AgentId } from "@/harness/agents";
+import { isAgentId, type AgentKey } from "@/harness/agents";
+import type { AgentInfo } from "@/harness/agentMeta";
+import type { Costume } from "@/harness/costume";
+import { useAgentMeta } from "@/components/agents/registry";
 import { MascotArt } from "@/components/mascot/Mascot";
 import type { Pose } from "@/components/mascot/grid";
 import type { MascotKind } from "@/components/mascot/props";
@@ -44,10 +47,10 @@ export function useCycle<T>(frames: T[], ms: number, enabled = true): T {
   return frames[i % frames.length];
 }
 
-function Figure({ kind, pose, x, y, s, flip, className }: { kind: MascotKind; pose: Pose; x: number; y: number; s: number; flip?: boolean; className?: string }) {
+function Figure({ kind, costume, pose, x, y, s, flip, className }: { kind?: MascotKind; costume?: Costume; pose: Pose; x: number; y: number; s: number; flip?: boolean; className?: string }) {
   return (
     <g className={className} style={{ transform: `translate(${x}px, ${y}px) scale(${s})` }}>
-      <MascotArt kind={kind} pose={pose} flip={flip} />
+      <MascotArt kind={kind} costume={costume} pose={pose} flip={flip} />
     </g>
   );
 }
@@ -256,10 +259,10 @@ function slotX(i: number, n: number, width = 120) {
   return (width - total) / 2 + i * SLOT;
 }
 
-function widgetLabel(room: string, pulled: AgentId[], active: AgentId[]) {
+function widgetLabel(room: string, pulled: AgentKey[], active: AgentKey[], meta: (id: AgentKey) => AgentInfo) {
   if (!pulled.length) return `${room}: no agents pulled yet.`;
-  const names = pulled.map((a) => AGENTS[a].name).join(", ");
-  const now = active.length ? ` Working now: ${active.map((a) => AGENTS[a].name).join(", ")}.` : "";
+  const names = pulled.map((a) => meta(a).name).join(", ");
+  const now = active.length ? ` Working now: ${active.map((a) => meta(a).name).join(", ")}.` : "";
   return `${room}: ${names}.${now}`;
 }
 
@@ -268,21 +271,27 @@ function Waiting({ y }: { y: number }) {
 }
 
 function WorkingAgent({ agent, i, n, active, frames, y, flip, lunge }: {
-  agent: AgentId; i: number; n: number; active: boolean; frames: Pose[]; y: number; flip?: boolean; lunge?: boolean;
+  agent: AgentKey; i: number; n: number; active: boolean; frames: Pose[]; y: number; flip?: boolean; lunge?: boolean;
 }) {
+  const meta = useAgentMeta();
   const reduced = useReducedMotion();
   const pose = useCycle(frames, active ? 220 : 1000, active && !reduced);
   const idle = frames[0].startsWith("sit") ? "sit" : "stand";
   return (
     <g className={active ? (lunge ? (flip ? styles.lungeLeft : styles.lungeRight) : styles.bob) : styles.idle}>
-      <Figure kind={agent} pose={active ? pose : (idle as Pose)} x={slotX(i, n) + 2} y={y} s={W_S} flip={flip} />
+      <Figure
+        kind={isAgentId(agent) ? agent : undefined}
+        costume={isAgentId(agent) ? undefined : (meta(agent).costume ?? {})}
+        pose={active ? pose : (idle as Pose)} x={slotX(i, n) + 2} y={y} s={W_S} flip={flip}
+      />
     </g>
   );
 }
 
-export function LibraryWidget({ pulled, active }: { pulled: AgentId[]; active: AgentId[] }) {
+export function LibraryWidget({ pulled, active }: { pulled: AgentKey[]; active: AgentKey[] }) {
+  const meta = useAgentMeta();
   return (
-    <Scene viewBox="0 0 120 34" label={widgetLabel("Library", pulled, active)} className={styles.widget}>
+    <Scene viewBox="0 0 120 34" label={widgetLabel("Library", pulled, active, meta)} className={styles.widget}>
       <Bookshelf x={2} y={1} w={116} h={12} />
       {pulled.map((a, i) => (
         <WorkingAgent key={a} agent={a} i={i} n={pulled.length} active={active.includes(a)} frames={["sitRead", "sit", "sitRead", "sitRead"]} y={29 - 12 * W_S} />
@@ -295,9 +304,10 @@ export function LibraryWidget({ pulled, active }: { pulled: AgentId[]; active: A
   );
 }
 
-export function ArenaWidget({ pulled, active }: { pulled: AgentId[]; active: AgentId[] }) {
+export function ArenaWidget({ pulled, active }: { pulled: AgentKey[]; active: AgentKey[] }) {
+  const meta = useAgentMeta();
   return (
-    <Scene viewBox="0 0 120 34" label={widgetLabel("Arena", pulled, active)} className={styles.widget}>
+    <Scene viewBox="0 0 120 34" label={widgetLabel("Arena", pulled, active, meta)} className={styles.widget}>
       <Arches y={20} from={2} to={118} step={8} h={10} />
       <rect x="0" y="31" width="120" height="3" fill="#2a261e" />
       {pulled.map((a, i) => (
@@ -308,10 +318,11 @@ export function ArenaWidget({ pulled, active }: { pulled: AgentId[]; active: Age
   );
 }
 
-export function HackathonWidget({ pulled, active }: { pulled: AgentId[]; active: AgentId[] }) {
+export function HackathonWidget({ pulled, active }: { pulled: AgentKey[]; active: AgentKey[] }) {
+  const meta = useAgentMeta();
   const n = pulled.length;
   return (
-    <Scene viewBox="0 0 120 34" label={widgetLabel("Hackathon", pulled, active)} className={styles.widget}>
+    <Scene viewBox="0 0 120 34" label={widgetLabel("Hackathon", pulled, active, meta)} className={styles.widget}>
       <line x1="0" y1="33.4" x2="120" y2="33.4" stroke={C.lineStrong} strokeWidth="0.3" />
       {pulled.map((a, i) => {
         const x = slotX(i, n);
@@ -327,6 +338,29 @@ export function HackathonWidget({ pulled, active }: { pulled: AgentId[]; active:
         );
       })}
       {!n && <Waiting y={22} />}
+    </Scene>
+  );
+}
+
+/** Laboratory: the team at a long lab bench with bubbling flasks. */
+export function LabWidget({ pulled, active }: { pulled: AgentKey[]; active: AgentKey[] }) {
+  const meta = useAgentMeta();
+  return (
+    <Scene viewBox="0 0 120 34" label={widgetLabel("Laboratory", pulled, active, meta)} className={styles.widget}>
+      {Array.from({ length: 12 }, (_, i) => <rect key={i} x={i * 10} y="0" width="9.5" height="16" fill="#1f2c2d" />)}
+      {[[12, "#86c07f"], [40, "#7aa2ea"], [70, "#e3b341"], [98, "#c4513f"]].map(([x, c], i) => (
+        <g key={i}>
+          <path d={`M${x} 6 h3 v3 l3 6 h-9 l3 -6 z`} fill="#cfe0ff" opacity="0.3" />
+          <path d={`M${(x as number) - 2} 12 h7 l1.5 3 h-10 z`} fill={c as string} opacity="0.8" className={styles.bob} />
+        </g>
+      ))}
+      {pulled.map((a, i) => (
+        <WorkingAgent key={a} agent={a} i={i} n={pulled.length} active={active.includes(a)} frames={["sitType1", "sit", "sitRead", "sitType2"]} y={29 - 12 * W_S} />
+      ))}
+      <rect x="2" y="26.5" width="116" height="1.2" fill="#6d7b7d" />
+      <rect x="4" y="27.7" width="1" height="6" fill={C.furniture} />
+      <rect x="115" y="27.7" width="1" height="6" fill={C.furniture} />
+      {!pulled.length && <Waiting y={22} />}
     </Scene>
   );
 }

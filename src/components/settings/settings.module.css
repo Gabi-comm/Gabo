@@ -53,3 +53,12 @@
   .tab { width: auto; flex: none; }
   .editor { padding: 14px; }
 }
+
+/* Settings shell: section tabs */
+.top { max-width: 1040px; margin: 0 auto 16px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+.top h1 { font-size: 20px; margin: 0; }
+.sections { display: flex; gap: 4px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 3px; }
+.sections button { background: none; border: 0; border-radius: 7px; padding: 5px 14px; color: var(--muted); }
+.sections button[aria-selected="true"] { background: var(--raised); color: var(--text); }
+.sectionBody { max-width: 1040px; margin: 0 auto; }
+.panel { min-width: 0; }

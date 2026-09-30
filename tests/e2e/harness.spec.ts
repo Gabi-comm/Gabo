@@ -161,7 +161,7 @@ test("the sidebar has no account footer", async ({ page }) => {
 
 test("mascots on the page loop their own animation; tiny sidebar ones wait for hover", async ({ page }) => {
   await page.goto("/agents");
-  const rows = page.locator("main li a");
+  const rows = page.locator("main ul").first().locator("li a");
   await expect(rows).toHaveCount(12);
   const seen = new Set<string>();
   for (let i = 0; i < 12; i++) {
@@ -484,4 +484,67 @@ test("Status shows Claude Code version, model, account, connectivity and tool st
   await expect(tools).toContainText("connected");
   await page.getByRole("button", { name: "Refresh" }).click();
   await expect(cc).toContainText("Version");
+});
+
+test("Settings → Add agent: costume from a description, randomize, background from the role, save; it shows up everywhere", async ({ page }) => {
+  await page.goto("/settings");
+  await page.getByRole("tab", { name: "Add agent" }).click();
+  const form = page.getByRole("form", { name: "New agent" });
+  await form.getByLabel("Name").fill("Data Wizard");
+  await form.getByLabel("One-liner").fill("Finds the story in a spreadsheet.");
+  await form.getByLabel("Describe the mascot").fill("a wise wizard with a magic staff and round glasses, violet");
+  await form.getByRole("button", { name: "Generate mascot" }).click();
+  await expect(form.getByLabel("Hat")).toHaveValue("wizard");
+  await expect(form.getByLabel("Holding")).toHaveValue("staff");
+  await expect(form.getByLabel("Body colour")).toHaveValue("violet");
+  const before = await form.getByLabel("Holding").inputValue();
+  let changed = false;
+  for (let i = 0; i < 6 && !changed; i++) {
+    await form.getByRole("button", { name: "Randomize costume" }).click();
+    changed = (await form.getByLabel("Holding").inputValue()) !== before || (await form.getByLabel("Hat").inputValue()) !== "wizard";
+  }
+  expect(changed).toBe(true);
+  await form.getByLabel("System prompt").fill("You teach statistics to first-year students with worked examples.");
+  await form.getByLabel("Goal").fill("End every answer with one practice question.");
+  await form.getByRole("button", { name: "Generate background" }).click();
+  await expect(form.getByLabel("Background")).toHaveValue("classroom");
+  await form.getByRole("button", { name: "Create agent" }).click();
+  await expect(page.getByText("Created Data Wizard.")).toBeVisible();
+
+  await page.goto("/agents");
+  const row = page.locator("main a", { hasText: "Data Wizard" });
+  await expect(row).toContainText("Finds the story in a spreadsheet.");
+  await row.click();
+  await expect(page).toHaveURL(/\/agents\/x-data-wizard/);
+  await expect(page.getByRole("img", { name: "Data Wizard" }).first()).toBeVisible();
+});
+
+test("Laboratory: pick the team, their mascots load above the prompt, and they run", async ({ page }) => {
+  await page.goto("/settings");
+  await page.getByRole("tab", { name: "Add agent" }).click();
+  const form = page.getByRole("form", { name: "New agent" });
+  await form.getByLabel("Name").fill("Lab Owl");
+  await form.getByLabel("System prompt").fill("You review experiments.");
+  await form.getByRole("button", { name: "Create agent" }).click();
+  await expect(page.getByText("Created Lab Owl.")).toBeVisible();
+
+  await page.goto("/");
+  const nav = page.getByRole("navigation", { name: "Main" });
+  await nav.getByRole("button", { name: /^Workspace/ }).click();
+  await nav.getByRole("link", { name: "Laboratory", exact: true }).click();
+  await expect(page).toHaveURL(/\/laboratory$/);
+  const picker = page.getByRole("group", { name: "Pick your team" });
+  const caveman = picker.getByRole("checkbox", { name: /The Caveman/ });
+  await expect(caveman).toBeChecked();
+  await expect(caveman).toBeDisabled();
+  await picker.getByRole("checkbox", { name: /The Tutor/ }).check();
+  await picker.getByRole("checkbox", { name: /Lab Owl/ }).check();
+  await page.getByRole("button", { name: "Start with 3 agents" }).click();
+  const team = page.getByRole("list", { name: "Your team" });
+  for (const name of ["The Tutor", "Lab Owl", "The Caveman"]) await expect(team.getByRole("img", { name })).toBeVisible();
+  await page.locator("#prompt-input").fill("review my experiment plan");
+  await page.keyboard.press("Enter");
+  await expect(page.getByText("Lab Owl reporting.")).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText("The Tutor reporting.")).toBeVisible();
+  await expect(page.getByText("Done. Fake run finished.")).toBeVisible({ timeout: 20_000 });
 });

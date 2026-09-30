@@ -2,7 +2,9 @@ import os from "node:os";
 import path from "node:path";
 import type { AgentDefinition, CanUseTool, McpServerConfig, Options, PermissionResult, Query, SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import { userContent, type ImageAttachment } from "./images";
-import { AGENTS, type AgentId } from "./agents";
+import { AGENTS, isAgentId, type AgentKey } from "./agents";
+import type { CustomAgent } from "./customAgents";
+import { metaOf } from "./agentMeta";
 import { createMapper, type Decision, type Question, type UiEvent } from "./events";
 import { broker as defaultBroker, guardToolInput, pendingAnswers, sessionRuleKey, type PermissionBroker, type PermissionAsk } from "./permissions";
 import { rosterFor, workflowFor, type RoomId } from "./rooms";
@@ -14,15 +16,27 @@ import { QUICK_AGENTS, arenaSizeGuard, detectPython, ensureIdeaArena, withIdeaRu
 
 export const SKILL_READ_ROOTS = [path.join(os.homedir(), ".claude", "skills")];
 
-function agentPrompt(id: AgentId, spec: ParsedSpec, override?: AgentOverride): string {
-  const parts = [
-    `You are ${AGENTS[id].name}, one agent on Gab's team. Your role:`,
-    override?.prompt ?? spec.agents[id],
-  ];
-  if (override?.goal) parts.push(`Gab's added goal for you: ${override.goal}`);
-  if (id === "emperor") parts.push(spec.ideaRubric, spec.emperorUsage);
+function agentPrompt(id: AgentKey, spec: ParsedSpec, overrides: Overrides, customs: CustomAgent[]): string | null {
+  let parts: string[];
+  if (isAgentId(id)) {
+    const override: AgentOverride | undefined = overrides[id];
+    parts = [`You are ${AGENTS[id].name}, one agent on Gab's team. Your role:`, override?.prompt ?? spec.agents[id]];
+    if (override?.goal) parts.push(`Gab's added goal for you: ${override.goal}`);
+    if (id === "emperor") parts.push(spec.ideaRubric, spec.emperorUsage);
+  } else {
+    const custom = customs.find((c) => c.id === id);
+    if (!custom) return null;
+    parts = [`You are ${custom.name}, an agent Gab made. Your role:`, custom.prompt];
+    if (custom.goal) parts.push(`Gab's added goal for you: ${custom.goal}`);
+  }
   parts.push("Skill rule (applies to you):", spec.skillScout);
   return parts.join("\n\n");
+}
+
+function describeAgent(id: AgentKey, customs: CustomAgent[]): string {
+  if (isAgentId(id)) return `${AGENTS[id].name}: ${AGENTS[id].tagline}`;
+  const c = customs.find((x) => x.id === id);
+  return c ? `${c.name}: ${c.tagline || "an agent Gab made"}` : id;
 }
 
 export interface BuildOptionsInput {
@@ -30,7 +44,11 @@ export interface BuildOptionsInput {
   workspace: string;
   spec: ParsedSpec;
   sessionId?: string;
-  skillsByAgent?: Partial<Record<AgentId, string[]>>;
+  skillsByAgent?: Partial<Record<AgentKey, string[]>>;
+  /** Laboratory: the team Gab picked. */
+  team?: string[];
+  /** Agents Gab made in Settings (needed when the roster includes them). */
+  customAgents?: CustomAgent[];
   /** Room-specific run notes appended after the workflow (e.g. where the arena skill lives). */
   extraWorkflow?: string;
   /** Gab's prompt and goal edits from the Settings page. */
@@ -42,12 +60,14 @@ export interface BuildOptionsInput {
 }
 
 /** Everything a room run passes to query(), minus the live callbacks. */
-export function buildOptions({ room, workspace, spec, sessionId, skillsByAgent = {}, extraWorkflow, overrides = {}, prefs = {}, mcpServers }: BuildOptionsInput): Options {
+export function buildOptions({ room, workspace, spec, sessionId, skillsByAgent = {}, team, customAgents = [], extraWorkflow, overrides = {}, prefs = {}, mcpServers }: BuildOptionsInput): Options {
   const agents: Record<string, AgentDefinition> = {};
-  for (const id of rosterFor(room)) {
+  for (const id of rosterFor(room, team)) {
+    const prompt = agentPrompt(id, spec, overrides, customAgents);
+    if (!prompt) continue; // a custom agent that was deleted since the chat started
     agents[id] = {
-      description: `${AGENTS[id].name}: ${AGENTS[id].tagline}`,
-      prompt: agentPrompt(id, spec, overrides[id]),
+      description: describeAgent(id, customAgents),
+      prompt,
       ...(skillsByAgent[id]?.length ? { skills: skillsByAgent[id] } : {}),
     };
   }
@@ -70,7 +90,7 @@ export function buildOptions({ room, workspace, spec, sessionId, skillsByAgent =
     systemPrompt: {
       type: "preset",
       preset: "claude_code",
-      append: [workflowFor(room), extraWorkflow, `The user is Gab. Workspace: ${workspace}`].filter(Boolean).join("\n"),
+      append: [workflowFor(room, Object.keys(agents)), extraWorkflow, `The user is Gab. Workspace: ${workspace}`].filter(Boolean).join("\n"),
     },
   };
 }
@@ -131,7 +151,10 @@ export interface RunInput {
   prompt: string;
   workspace: string;
   sessionId?: string;
-  skillsByAgent?: Partial<Record<AgentId, string[]>>;
+  skillsByAgent?: Partial<Record<AgentKey, string[]>>;
+  /** Laboratory team, and the custom agents that may be on it. */
+  team?: string[];
+  customAgents?: CustomAgent[];
   /** Gab confirmed a full (more than --quick) arena run. */
   fullArena?: boolean;
   /** Model, permission mode and effort picked in the status line. */
@@ -156,7 +179,7 @@ export function preToolUseReason(tool: string, toolInput: Record<string, unknown
 const LOGIN_HINT = "Open a terminal, run `claude`, then `/login` with your Pro/Max account.";
 
 export async function runRoom(input: RunInput): Promise<void> {
-  const { runId, conversationId, room, prompt, workspace, sessionId, skillsByAgent, fullArena = false, prefs, images = [], mcpServers, systemNote, emit, signal } = input;
+  const { runId, conversationId, room, prompt, workspace, sessionId, skillsByAgent, fullArena = false, prefs, images = [], mcpServers, systemNote, team, customAgents = [], emit, signal } = input;
   // Esc can land while setup awaits (skill scout, SDK import, Python check); an abort before the
   // listener below is attached would otherwise be missed and the run would go on unseen.
   const stopped = () => {
@@ -200,7 +223,7 @@ export async function runRoom(input: RunInput): Promise<void> {
     });
 
   const options: Options = {
-    ...buildOptions({ room, workspace, spec, sessionId, skillsByAgent, extraWorkflow: [extraWorkflow, systemNote].filter(Boolean).join("\n") || undefined, overrides: loadOverrides(), prefs, mcpServers }),
+    ...buildOptions({ room, workspace, spec, sessionId, skillsByAgent, extraWorkflow: [extraWorkflow, systemNote].filter(Boolean).join("\n") || undefined, overrides: loadOverrides(), prefs, mcpServers, team, customAgents }),
     abortController,
     canUseTool: makeCanUseTool({ runId, workspace, broker: defaultBroker, sessionRules, onAsk }),
     hooks: {
@@ -217,7 +240,9 @@ export async function runRoom(input: RunInput): Promise<void> {
     },
   };
 
-  const map = createMapper();
+  // Subagents on this run's roster (built-in or custom) get their own mascot in the transcript.
+  const roster = new Set<string>(Object.keys(options.agents ?? {}));
+  const map = createMapper((id) => typeof id === "string" && roster.has(id));
   const stream = async () => {
     // With images the message goes in as content blocks (one streamed user message), like a pasted screenshot.
     async function* withImages(): AsyncGenerator<SDKUserMessage> {
@@ -262,9 +287,11 @@ export interface FakeRunInput {
   ask?: (tool: string, summary: string, extra?: Pick<PermissionAsk, "kind" | "questions" | "plan">) => Promise<{ decision: Decision; answers?: Record<string, string> }>;
   prefs?: RunPrefs;
   images?: ImageAttachment[];
+  team?: string[];
+  customAgents?: CustomAgent[];
 }
 
-export async function fakeRun({ room, prompt, emit, signal, delayMs = 120, ask, prefs = {}, images = [] }: FakeRunInput): Promise<void> {
+export async function fakeRun({ room, prompt, emit, signal, delayMs = 120, ask, prefs = {}, images = [], team, customAgents = [] }: FakeRunInput): Promise<void> {
   const wait = () => new Promise((r) => setTimeout(r, delayMs));
   const step = async (e: UiEvent) => {
     if (signal.aborted) throw new Error("aborted");
@@ -275,8 +302,8 @@ export async function fakeRun({ room, prompt, emit, signal, delayMs = 120, ask, 
     await step({ type: "session", sessionId: "fake-session", model: "fake-model", cwd: "C:/fake/workspace" });
     await step({ type: "notice", text: `Run settings: mode ${prefs.mode ?? "default"}, model ${prefs.model ?? "default"}, effort ${prefs.effort ?? "auto"}` });
     if (images.length) await step({ type: "notice", text: `Received ${images.length} image${images.length === 1 ? "" : "s"} (${images.map((i) => i.mediaType).join(", ")}).` });
-    const roster = rosterFor(room);
-    const uiAgents = new Set<AgentId>(["designer", "tester"]);
+    const roster = rosterFor(room, team).filter((a) => isAgentId(a) || customAgents.some((c) => c.id === a));
+    const uiAgents = new Set<AgentKey>(["designer", "tester"]);
     await step({
       type: "skills",
       lines: roster.map((agent) => uiAgents.has(agent)
@@ -314,8 +341,9 @@ export async function fakeRun({ room, prompt, emit, signal, delayMs = 120, ask, 
     }
     for (const [i, agent] of roster.entries()) {
       const id = `a${i}`;
-      await step({ type: "agent_start", agent, toolUseId: id, description: `${AGENTS[agent].verb.toLowerCase()} on: ${prompt.slice(0, 40)}` });
-      for (const word of `${AGENTS[agent].name} reporting. `.split(/(?<= )/)) await step({ type: "text", delta: word, agent });
+      const meta = metaOf(agent, customAgents);
+      await step({ type: "agent_start", agent, toolUseId: id, description: `${meta.verb.toLowerCase()} on: ${prompt.slice(0, 40)}` });
+      for (const word of `${meta.name} reporting. `.split(/(?<= )/)) await step({ type: "text", delta: word, agent });
       await step({ type: "agent_stop", agent, toolUseId: id, ok: true });
     }
     for (const word of "Done. Fake run finished.".split(/(?<= )/)) await step({ type: "text", delta: word, agent: null });

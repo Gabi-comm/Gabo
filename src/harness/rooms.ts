@@ -1,8 +1,8 @@
-import { isAgentId, type AgentId } from "./agents";
+import { isAgentKey, type AgentId, type AgentKey } from "./agents";
 
-export const ROOM_IDS = ["home", "library", "arena", "hackathon"] as const;
+export const ROOM_IDS = ["home", "library", "arena", "hackathon", "laboratory"] as const;
 export type BaseRoomId = (typeof ROOM_IDS)[number];
-export type RoomId = BaseRoomId | `agent:${AgentId}`;
+export type RoomId = BaseRoomId | `agent:${AgentKey}`;
 
 export interface RoomMeta {
   id: BaseRoomId;
@@ -58,27 +58,47 @@ export const ROOMS: Record<BaseRoomId, RoomMeta> = {
     ].join(" "),
     placeholder: "What are we shipping?",
   },
+  laboratory: {
+    id: "laboratory",
+    label: "Laboratory",
+    // The team is picked per chat; see rosterFor(room, team).
+    roster: ["caveman"],
+    workflow: "You lead the Laboratory: Gab picked this team himself for the task.",
+    placeholder: "What should this team work on?",
+  },
 };
 
 export function isRoomId(value: unknown): value is RoomId {
   if (typeof value !== "string") return false;
   if ((ROOM_IDS as readonly string[]).includes(value)) return true;
-  return value.startsWith("agent:") && isAgentId(value.slice(6));
+  return value.startsWith("agent:") && isAgentKey(value.slice(6));
+}
+
+/** A Laboratory team as Gab picked it: known ids only, no repeats, the Caveman always in. */
+export function labTeam(team: readonly string[] = []): AgentKey[] {
+  const out: AgentKey[] = [];
+  for (const id of team) if (isAgentKey(id) && !out.includes(id)) out.push(id);
+  if (!out.includes("caveman")) out.push("caveman");
+  return out;
 }
 
 /** The agents a room can pull. The Caveman is in every room. */
-export function rosterFor(room: RoomId): AgentId[] {
+export function rosterFor(room: RoomId, team?: readonly string[]): AgentKey[] {
   if (room.startsWith("agent:")) {
-    const id = room.slice(6) as AgentId;
+    const id = room.slice(6) as AgentKey;
     return id === "caveman" ? ["caveman"] : [id, "caveman"];
   }
+  if (room === "laboratory") return labTeam(team);
   return ROOMS[room as BaseRoomId].roster;
 }
 
-export function workflowFor(room: RoomId): string {
+export function workflowFor(room: RoomId, team?: readonly string[]): string {
   if (room.startsWith("agent:")) {
     const id = room.slice(6);
     return `You are a solo session with the ${id} agent. Delegate the user's task to the ${id} agent and show its output in full. The Caveman is available for a short recap if asked.`;
+  }
+  if (room === "laboratory") {
+    return `${ROOMS.laboratory.workflow} Team (subagent ids): ${labTeam(team).join(", ")}. Pull the members the task needs, in a sensible order, and let them build on each other's work. The Caveman writes the final recap.`;
   }
   return ROOMS[room as BaseRoomId].workflow;
 }

@@ -3,13 +3,17 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { AGENTS, type AgentId } from "@/harness/agents";
+import type { AgentKey } from "@/harness/agents";
 import type { Decision, Diff, Todo } from "@/harness/events";
 import { rosterFor, type RoomId } from "@/harness/rooms";
 import { Mascot } from "@/components/mascot/Mascot";
 import { activeAgents, pulledAgents, type Item, type Transcript } from "./transcript";
 import { useConversation } from "./useConversation";
 import { SkillCard } from "./SkillCard";
+import { AgentMascot, useAgentMeta } from "@/components/agents/registry";
+import type { AgentInfo } from "@/harness/agentMeta";
+
+type Meta = (id: AgentKey) => AgentInfo;
 import { fetchClaudeInfo, toRunPrefs, useClaudeInfo, usePrefs, type ClaudeInfo, type Prefs } from "./useClaude";
 import { EFFORTS, MODES, MODE_LABELS, isMode, nextMode, type Mode } from "@/harness/controls";
 import { MAX_IMAGES, MAX_IMAGE_B64, type ImageAttachment } from "@/harness/images";
@@ -25,7 +29,9 @@ export interface ConsoleProps {
   /** Shown above the input before the first message (the room's intro scene). */
   hero: ReactNode;
   /** Top-left scene of the pulled agents once the chat has started. */
-  scene?: (pulled: AgentId[], active: AgentId[]) => ReactNode;
+  scene?: (pulled: AgentKey[], active: AgentKey[]) => ReactNode;
+  /** Laboratory: the team picked for this chat (sent with each message). */
+  team?: AgentKey[];
   suggestions?: string[];
 }
 
@@ -43,9 +49,10 @@ const APP_COMMANDS: Cmd[] = [
   { cmd: "/help", help: "list commands and keys" },
 ];
 
-export function Console({ room, conversationId, sessionId, label, placeholder, hero, scene, suggestions = [] }: ConsoleProps) {
+export function Console({ room, conversationId, sessionId, team, label, placeholder, hero, scene, suggestions = [] }: ConsoleProps) {
   const { t, dispatch, send, stop, answer, reset, conversationId: liveId } = useConversation(room, conversationId, sessionId);
   const info = useClaudeInfo();
+  const meta = useAgentMeta();
   const [prefs, setPrefs] = usePrefs(info?.defaultMode);
   const [queue, setQueue] = useState<Queued[]>([]);
   const [inputHistory, setInputHistory] = useState<string[]>([]);
@@ -118,14 +125,14 @@ export function Console({ room, conversationId, sessionId, label, placeholder, h
         ].join("\n") });
         return true;
       case "/agents":
-        dispatch({ type: "notice", text: rosterFor(room).map((a) => `${AGENTS[a].name.padEnd(15)} ${AGENTS[a].tagline}`).join("\n") });
+        dispatch({ type: "notice", text: rosterFor(room, team).map((a) => `${meta(a).name.padEnd(15)} ${meta(a).tagline}`).join("\n") });
         return true;
       case "/cost":
         dispatch({ type: "notice", text: `${t.tokens.toLocaleString()} tokens this chat · $${t.costUsd.toFixed(4)} API-equivalent (billed to your Claude plan, not per token)` });
         return true;
       case "/skills": {
         const last = [...t.items].reverse().find((i) => i.kind === "skills");
-        dispatch({ type: "notice", text: last && last.kind === "skills" ? last.lines.map((l) => `${AGENTS[l.agent].name}: ${l.skills.join(", ") || "none"}${l.why ? ` — ${l.why}` : ""}`).join("\n") || "No skills picked yet." : "Skills are picked on the first message of a chat." });
+        dispatch({ type: "notice", text: last && last.kind === "skills" ? last.lines.map((l) => `${meta(l.agent).name}: ${l.skills.join(", ") || "none"}${l.why ? ` — ${l.why}` : ""}`).join("\n") || "No skills picked yet." : "Skills are picked on the first message of a chat." });
         return true;
       }
       case "/cwd": {
@@ -181,16 +188,16 @@ export function Console({ room, conversationId, sessionId, label, placeholder, h
     if (!value && images.length === 0) return;
     if (value && !fromQueue) remember(value);
     if (t.running) { setQueue((q) => [...q, { text: value, images }]); return; }
-    if (images.length) { stick.current = true; await send(value, { prefs: toRunPrefs(prefs), images }); return; }
+    if (images.length) { stick.current = true; await send(value, { prefs: toRunPrefs(prefs), images, team }); return; }
     stick.current = true;
     if (value.startsWith("/") && (await runSlash(value))) return;
     if (room === "arena" && /(^|\s)--full\b/.test(value)) {
       const ok = window.confirm("Run the full arena with 100 agents? It uses far more of your Claude plan than --quick (16). Cancel runs --quick instead.");
       dispatch({ type: "notice", text: ok ? "Full 100-agent arena confirmed." : "Running --quick (16 agents) instead." });
-      await send(value, { full: ok, prefs: toRunPrefs(prefs) });
+      await send(value, { full: ok, prefs: toRunPrefs(prefs), team });
       return;
     }
-    await send(value, { prefs: toRunPrefs(prefs) });
+    await send(value, { prefs: toRunPrefs(prefs), team });
   }
 
   const prompt = (
@@ -236,7 +243,7 @@ export function Console({ room, conversationId, sessionId, label, placeholder, h
         {scene && <div className={styles.sceneSlot} aria-label="Agents at work">{scene(pulled, active)}</div>}
         <div className={styles.roomLabel}>
           <span>{label}</span>
-          <span className={styles.roster}>{pulled.length ? pulled.map((a) => AGENTS[a].name.replace("The ", "")).join(" · ") : "no agents pulled yet"}</span>
+          <span className={styles.roster}>{pulled.length ? pulled.map((a) => meta(a).short).join(" · ") : "no agents pulled yet"}</span>
         </div>
       </header>
       <div
@@ -250,11 +257,11 @@ export function Console({ room, conversationId, sessionId, label, placeholder, h
         <ol className={styles.transcript} aria-live="polite" aria-busy={t.running}>
           {t.items.map((item, i) => (
             <li key={i}>
-              <ItemView item={item} onAnswer={answer} onSkills={(names) => dispatch(names.length ? { type: "skills_installed", names } : { type: "skills_dismissed" })} />
+              <ItemView item={item} meta={meta} onAnswer={answer} onSkills={(names) => dispatch(names.length ? { type: "skills_installed", names } : { type: "skills_dismissed" })} />
             </li>
           ))}
         </ol>
-        {t.running && <Spinner active={active} />}
+        {t.running && <Spinner active={active} meta={meta} />}
       </div>
       <div className={styles.dock}>
         <TodoPanel todos={t.todos ?? []} />
@@ -264,11 +271,11 @@ export function Console({ room, conversationId, sessionId, label, placeholder, h
   );
 }
 
-function AgentTag({ agent }: { agent: AgentId }) {
+function AgentTag({ agent, meta }: { agent: AgentKey; meta: Meta }) {
   return (
     <span className={styles.agentTag}>
-      <Mascot kind={agent} size={20} sticker={false} />
-      {AGENTS[agent].name}
+      <AgentMascot id={agent} info={meta(agent)} size={20} sticker={false} />
+      {meta(agent).name}
     </span>
   );
 }
@@ -285,7 +292,7 @@ function Markdown({ text }: { text: string }) {
 
 type Answer = (id: string, d: Decision, answers?: Record<string, string>) => void;
 
-function ItemView({ item, onAnswer, onSkills }: { item: Item; onAnswer: Answer; onSkills: (names: string[]) => void }) {
+function ItemView({ item, meta, onAnswer, onSkills }: { item: Item; meta: Meta; onAnswer: Answer; onSkills: (names: string[]) => void }) {
   switch (item.kind) {
     case "user":
       return (
@@ -301,7 +308,7 @@ function ItemView({ item, onAnswer, onSkills }: { item: Item; onAnswer: Answer; 
         <div className={styles.line} data-agent={item.agent ?? "lead"}>
           <span className={styles.dot} aria-hidden="true">●</span>
           <div className={styles.body}>
-            {item.agent && <AgentTag agent={item.agent} />}
+            {item.agent && <AgentTag agent={item.agent} meta={meta} />}
             <Markdown text={item.text} />
           </div>
         </div>
@@ -312,7 +319,7 @@ function ItemView({ item, onAnswer, onSkills }: { item: Item; onAnswer: Answer; 
           <span className={styles.dot} data-status={item.status} aria-hidden="true">●</span>
           <div className={styles.body}>
             <span className={styles.toolName}>{item.summary}</span>
-            {item.agent && <span className={styles.via}> · {AGENTS[item.agent].name}</span>}
+            {item.agent && <span className={styles.via}> · {meta(item.agent).name}</span>}
             {item.status === "running" && <span className={styles.via}> running…</span>}
             {item.status === "stopped" && <span className={styles.via}> stopped</span>}
             {item.diff && <DiffView diff={item.diff} />}
@@ -328,11 +335,11 @@ function ItemView({ item, onAnswer, onSkills }: { item: Item; onAnswer: Answer; 
     case "agent":
       return (
         <div className={styles.agentBlock} data-status={item.status}>
-          <Mascot kind={item.agent} size={28} sticker={false} />
+          <AgentMascot id={item.agent} info={meta(item.agent)} size={28} sticker={false} />
           <div>
-            <div><strong>{AGENTS[item.agent].name}</strong> <span className={styles.via}>{item.description}</span></div>
+            <div><strong>{meta(item.agent).name}</strong> <span className={styles.via}>{item.description}</span></div>
             <div className={styles.via}>
-              {item.status === "running" ? (item.progress ?? `${AGENTS[item.agent].verb}…`) : item.status === "ok" ? "done" : item.status === "stopped" ? "stopped" : "failed"}
+              {item.status === "running" ? (item.progress ?? `${meta(item.agent).verb}…`) : item.status === "ok" ? "done" : item.status === "stopped" ? "stopped" : "failed"}
             </div>
           </div>
         </div>
@@ -342,7 +349,7 @@ function ItemView({ item, onAnswer, onSkills }: { item: Item; onAnswer: Answer; 
       if (item.ask === "plan") return <PlanPrompt item={item} onAnswer={onAnswer} />;
       return <PermissionPrompt item={item} onAnswer={onAnswer} />;
     case "skills":
-      return <SkillCard item={item} onDone={onSkills} />;
+      return <SkillCard item={item} meta={meta} onDone={onSkills} />;
     case "error":
       return (
         <div className={styles.error} role="alert">
@@ -517,7 +524,7 @@ function PermissionPrompt({ item, onAnswer }: { item: Extract<Item, { kind: "per
 
 const GLYPHS = ["·", "✢", "✳", "✶", "✻", "✽", "✻", "✶", "✳", "✢"];
 
-function Spinner({ active }: { active: AgentId[] }) {
+function Spinner({ active, meta }: { active: AgentKey[]; meta: Meta }) {
   const [tick, setTick] = useState(0);
   const start = useRef(Date.now());
   useEffect(() => {
@@ -525,7 +532,7 @@ function Spinner({ active }: { active: AgentId[] }) {
     return () => clearInterval(id);
   }, []);
   const secs = Math.floor((Date.now() - start.current) / 1000);
-  const verb = active.length ? active.map((a) => AGENTS[a].verb).join(" + ") : "Thinking";
+  const verb = active.length ? active.map((a) => meta(a).verb).join(" + ") : "Thinking";
   return (
     <div className={styles.spinner} role="status">
       <span className={styles.glyph} aria-hidden="true">{GLYPHS[tick % GLYPHS.length]}</span>

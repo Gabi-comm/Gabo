@@ -1,13 +1,13 @@
-import type { AgentId } from "@/harness/agents";
+import type { AgentKey } from "@/harness/agents";
 import type { AskKind, Decision, Diff, Question, SkillLine, SkillRec, Todo, UiEvent } from "@/harness/events";
 
 export type Status = "running" | "ok" | "error" | "stopped";
 
 export type Item =
   | { kind: "user"; text: string; images?: number }
-  | { kind: "text"; agent: AgentId | null; text: string }
-  | { kind: "tool"; id: string; summary: string; agent: AgentId | null; status: Status; preview?: string; lines?: number; diff?: Diff }
-  | { kind: "agent"; agent: AgentId; toolUseId: string; description: string; status: Status; progress?: string }
+  | { kind: "text"; agent: AgentKey | null; text: string }
+  | { kind: "tool"; id: string; summary: string; agent: AgentKey | null; status: Status; preview?: string; lines?: number; diff?: Diff }
+  | { kind: "agent"; agent: AgentKey; toolUseId: string; description: string; status: Status; progress?: string }
   | { kind: "permission"; requestId: string; tool: string; summary: string; decision?: Decision; ask?: AskKind; questions?: Question[]; plan?: string; answers?: Record<string, string> }
   | { kind: "skills"; lines: SkillLine[]; missing: SkillRec[]; note?: string; installed?: string[]; dismissed?: boolean }
   | { kind: "error"; message: string; hint?: string }
@@ -126,14 +126,14 @@ export function reduce(t: Transcript, a: Action): Transcript {
 }
 
 /** Agents pulled into this conversation, in the order they first spoke. */
-export function pulledAgents(t: Transcript): AgentId[] {
-  const seen: AgentId[] = [];
+export function pulledAgents(t: Transcript): AgentKey[] {
+  const seen: AgentKey[] = [];
   for (const i of t.items) if (i.kind === "agent" && !seen.includes(i.agent)) seen.push(i.agent);
   return seen;
 }
 
-export function activeAgents(t: Transcript): AgentId[] {
-  return [...new Set(t.items.filter((i) => i.kind === "agent" && i.status === "running").map((i) => (i as { agent: AgentId }).agent))];
+export function activeAgents(t: Transcript): AgentKey[] {
+  return [...new Set(t.items.filter((i) => i.kind === "agent" && i.status === "running").map((i) => (i as { agent: AgentKey }).agent))];
 }
 
 export function parseSse(buffer: string): { events: UiEvent[]; rest: string } {

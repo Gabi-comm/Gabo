@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import type { AgentId } from "@/harness/agents";
+import type { AgentKey } from "@/harness/agents";
 import type { RoomId } from "@/harness/rooms";
 
 export interface SessionRecord {
@@ -10,8 +10,10 @@ export interface SessionRecord {
   sdkSessionId?: string;
   /** Project folder the session runs in (a Claude Code session opened from history keeps its own). */
   cwd?: string;
+  /** Laboratory: the team Gab picked for this chat. */
+  team?: string[];
   /** Skills each agent kept on the first turn (skill scout). */
-  skills?: Partial<Record<AgentId, string[]>>;
+  skills?: Partial<Record<AgentKey, string[]>>;
   updatedAt: number;
 }
 
