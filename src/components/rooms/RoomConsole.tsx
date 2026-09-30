@@ -23,14 +23,15 @@ const SCENES = {
   hackathon: { hero: <HackathonIntro />, scene: (p: AgentId[], a: AgentId[]) => <HackathonWidget pulled={p} active={a} /> },
 } as const;
 
-export function RoomConsole({ room, conversationId }: { room: RoomId; conversationId?: string }) {
+export function RoomConsole({ room, conversationId, sessionId }: { room: RoomId; conversationId?: string; sessionId?: string }) {
   if (room.startsWith("agent:")) {
     const id = room.slice(6) as AgentId;
     return (
       <Console
-        key={conversationId ?? room}
+        key={conversationId ?? sessionId ?? room}
         room={room}
         conversationId={conversationId}
+        sessionId={sessionId}
         label={AGENTS[id].name}
         placeholder={`Give ${AGENTS[id].name} a task`}
         hero={
@@ -47,9 +48,10 @@ export function RoomConsole({ room, conversationId }: { room: RoomId; conversati
   const { hero, scene } = SCENES[base];
   return (
     <Console
-      key={conversationId ?? room}
+      key={conversationId ?? sessionId ?? room}
       room={room}
       conversationId={conversationId}
+        sessionId={sessionId}
       label={ROOMS[base].label}
       placeholder={ROOMS[base].placeholder}
       hero={hero}

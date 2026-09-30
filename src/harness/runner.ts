@@ -1,12 +1,13 @@
 import os from "node:os";
 import path from "node:path";
-import type { AgentDefinition, CanUseTool, Options, PermissionResult } from "@anthropic-ai/claude-agent-sdk";
+import type { AgentDefinition, CanUseTool, Options, PermissionResult, Query } from "@anthropic-ai/claude-agent-sdk";
 import { AGENTS, type AgentId } from "./agents";
 import { createMapper, type Decision, type UiEvent } from "./events";
 import { broker as defaultBroker, guardToolInput, sessionRuleKey, type PermissionBroker, type PermissionAsk } from "./permissions";
 import { rosterFor, workflowFor, type RoomId } from "./rooms";
 import { loadSpec, type ParsedSpec } from "./spec";
 import { loadOverrides, type AgentOverride, type Overrides } from "./overrides";
+import type { RunPrefs } from "./controls";
 import { summarizeTool } from "./events";
 import { QUICK_AGENTS, arenaSizeGuard, detectPython, ensureIdeaArena, withIdeaRubric } from "./arena";
 
@@ -33,10 +34,12 @@ export interface BuildOptionsInput {
   extraWorkflow?: string;
   /** Gab's prompt and goal edits from the Settings page. */
   overrides?: Overrides;
+  /** Model, permission mode and effort picked in the status line. */
+  prefs?: RunPrefs;
 }
 
 /** Everything a room run passes to query(), minus the live callbacks. */
-export function buildOptions({ room, workspace, spec, sessionId, skillsByAgent = {}, extraWorkflow, overrides = {} }: BuildOptionsInput): Options {
+export function buildOptions({ room, workspace, spec, sessionId, skillsByAgent = {}, extraWorkflow, overrides = {}, prefs = {} }: BuildOptionsInput): Options {
   const agents: Record<string, AgentDefinition> = {};
   for (const id of rosterFor(room)) {
     agents[id] = {
@@ -56,8 +59,10 @@ export function buildOptions({ room, workspace, spec, sessionId, skillsByAgent =
     includePartialMessages: true,
     forwardSubagentText: true,
     agentProgressSummaries: true,
-    settingSources: ["user", "project"],
-    permissionMode: "default",
+    // settingSources omitted = everything the CLI loads: user, project and local settings, CLAUDE.md, plugins, MCP.
+    permissionMode: prefs.mode ?? "default",
+    ...(prefs.model ? { model: prefs.model } : {}),
+    ...(prefs.effort ? { effort: prefs.effort } : {}),
     systemPrompt: {
       type: "preset",
       preset: "claude_code",
@@ -87,8 +92,10 @@ export function makeCanUseTool({ runId, workspace, broker, sessionRules, onAsk }
   };
 }
 
-const g = globalThis as unknown as { __gaboRules?: Map<string, Set<string>> };
+const g = globalThis as unknown as { __gaboRules?: Map<string, Set<string>>; __gaboLive?: Map<string, Query> };
 const rulesByConversation = (g.__gaboRules ??= new Map());
+/** The running query per chat, so the status line can switch mode or model mid-run like the CLI. */
+export const liveQueries = (g.__gaboLive ??= new Map<string, Query>());
 
 export interface RunInput {
   runId: string;
@@ -100,6 +107,8 @@ export interface RunInput {
   skillsByAgent?: Partial<Record<AgentId, string[]>>;
   /** Gab confirmed a full (more than --quick) arena run. */
   fullArena?: boolean;
+  /** Model, permission mode and effort picked in the status line. */
+  prefs?: RunPrefs;
   emit: (e: UiEvent) => void;
   signal: AbortSignal;
   /** Test seam; defaults to the Agent SDK's query(). */
@@ -115,7 +124,7 @@ export function preToolUseReason(tool: string, toolInput: Record<string, unknown
 const LOGIN_HINT = "Open a terminal, run `claude`, then `/login` with your Pro/Max account.";
 
 export async function runRoom(input: RunInput): Promise<void> {
-  const { runId, conversationId, room, prompt, workspace, sessionId, skillsByAgent, fullArena = false, emit, signal } = input;
+  const { runId, conversationId, room, prompt, workspace, sessionId, skillsByAgent, fullArena = false, prefs, emit, signal } = input;
   // Esc can land while setup awaits (skill scout, SDK import, Python check); an abort before the
   // listener below is attached would otherwise be missed and the run would go on unseen.
   const stopped = () => {
@@ -156,7 +165,7 @@ export async function runRoom(input: RunInput): Promise<void> {
     emit({ type: "permission_request", requestId: req.requestId, tool: req.tool, summary: req.summary });
 
   const options: Options = {
-    ...buildOptions({ room, workspace, spec, sessionId, skillsByAgent, extraWorkflow, overrides: loadOverrides() }),
+    ...buildOptions({ room, workspace, spec, sessionId, skillsByAgent, extraWorkflow, overrides: loadOverrides(), prefs }),
     abortController,
     canUseTool: makeCanUseTool({ runId, workspace, broker: defaultBroker, sessionRules, onAsk }),
     hooks: {
@@ -175,7 +184,9 @@ export async function runRoom(input: RunInput): Promise<void> {
 
   const map = createMapper();
   const stream = async () => {
-    for await (const msg of query({ prompt, options })) {
+    const live = query({ prompt, options });
+    liveQueries.set(conversationId, live);
+    for await (const msg of live) {
       for (const e of map(msg as never)) emit(e);
     }
   };
@@ -194,6 +205,7 @@ export async function runRoom(input: RunInput): Promise<void> {
     }
   } finally {
     signal.removeEventListener("abort", onAbort);
+    if (liveQueries.get(conversationId)) liveQueries.delete(conversationId);
     defaultBroker.cancelRun(runId);
     emit({ type: "done" });
   }

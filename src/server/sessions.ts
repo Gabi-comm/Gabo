@@ -8,6 +8,8 @@ export interface SessionRecord {
   room: RoomId;
   title: string;
   sdkSessionId?: string;
+  /** Project folder the session runs in (a Claude Code session opened from history keeps its own). */
+  cwd?: string;
   /** Skills each agent kept on the first turn (skill scout). */
   skills?: Partial<Record<AgentId, string[]>>;
   updatedAt: number;

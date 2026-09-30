@@ -24,7 +24,7 @@ describe("buildOptions", () => {
     expect(opts.includePartialMessages).toBe(true);
     // Subagent words must reach the transcript tagged with their mascot, not only the lead's summary.
     expect(opts.forwardSubagentText).toBe(true);
-    expect(opts.settingSources).toEqual(["user", "project"]);
+    expect(opts.settingSources).toBeUndefined();
     expect(opts.permissionMode).toBe("default");
     expect(opts.env?.ANTHROPIC_API_KEY).toBeUndefined();
     expect(opts.agents!.caveman.skills).toEqual(["unslop"]);

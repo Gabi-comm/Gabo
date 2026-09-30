@@ -19,6 +19,8 @@ export type UiEvent =
   | { type: "skills"; lines: SkillLine[]; missing: SkillRec[]; note?: string }
   | { type: "result"; ok: boolean; costUsd: number; inputTokens: number; outputTokens: number; durationMs: number }
   | { type: "error"; message: string; hint?: string }
+  | { type: "notice"; text: string }
+  | { type: "mode"; mode: string }
   | { type: "done" };
 
 type Block = { type: string; [k: string]: unknown };
@@ -64,6 +66,17 @@ export function createMapper() {
       case "system": {
         if (msg.subtype === "init") {
           return [{ type: "session", sessionId: String(msg.session_id), model: String(msg.model), cwd: String(msg.cwd) }];
+        }
+        if (msg.subtype === "local_command_output" && typeof msg.content === "string") {
+          return [{ type: "notice", text: msg.content }];
+        }
+        if (msg.subtype === "compact_boundary") {
+          const meta = (msg.compact_metadata ?? {}) as { trigger?: string; pre_tokens?: number };
+          const was = typeof meta.pre_tokens === "number" ? `, was ${meta.pre_tokens.toLocaleString("en-US")} tokens` : "";
+          return [{ type: "notice", text: `Conversation compacted (${meta.trigger ?? "auto"}${was}).` }];
+        }
+        if (msg.subtype === "status" && typeof msg.permissionMode === "string") {
+          return [{ type: "mode", mode: msg.permissionMode }];
         }
         if (msg.subtype === "task_progress" && typeof msg.summary === "string") {
           const agent = subagentByToolUse.get(String(msg.tool_use_id));

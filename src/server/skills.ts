@@ -43,6 +43,8 @@ async function askScout(prompt: string, cwd: string, signal?: AbortSignal): Prom
       prompt,
       options: {
         model: "haiku", maxTurns: 1, cwd, env, abortController, settingSources: [],
+        // Bookkeeping turn: keep it out of Gab's Claude Code session history.
+        persistSession: false,
         systemPrompt: "You output JSON only. No prose.",
         canUseTool: async () => ({ behavior: "deny", message: "The skill scout uses no tools." }),
       },

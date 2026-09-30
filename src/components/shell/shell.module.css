@@ -49,9 +49,10 @@
 .subItem { display: flex; align-items: center; gap: 8px; padding: 3px 8px; border-radius: 6px; color: var(--muted); font-size: 13px; }
 
 .recentsHead { color: var(--muted); font-size: 12px; padding: 18px 10px 6px; }
+.recentsSub { color: var(--dim); }
 .recents { flex: 1; min-height: 0; padding-bottom: 12px; }
 .recent { display: flex; gap: 8px; align-items: baseline; padding: 5px 10px; border-radius: 8px; color: #d9d8d2; font-size: 13px; }
-.recentRoom { color: var(--dim); font-size: 11px; width: 58px; flex: none; overflow: hidden; text-overflow: ellipsis; }
+.recentRoom { color: var(--dim); font-size: 11px; width: 72px; flex: none; overflow: hidden; text-overflow: ellipsis; }
 .recentTitle { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .recentsEmpty { color: var(--muted); font-size: 13px; padding: 4px 10px; }
 .linkButton { background: none; border: 0; color: var(--blue-text); padding: 0; text-decoration: underline; }

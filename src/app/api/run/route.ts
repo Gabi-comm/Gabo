@@ -4,7 +4,8 @@ import { broker } from "@/harness/permissions";
 import { fakeRun, runRoom } from "@/harness/runner";
 import type { UiEvent } from "@/harness/events";
 import { rejectForeign } from "@/server/guard";
-import { FAKE, getWorkspace, sessions } from "@/server/config";
+import { parseRunPrefs } from "@/harness/controls";
+import { FAKE, getWorkspace, sessions, validateWorkspace } from "@/server/config";
 import { prepareSkills } from "@/server/skills";
 
 export const runtime = "nodejs";
@@ -18,7 +19,7 @@ export async function POST(req: Request) {
   const denied = rejectForeign(req);
   if (denied) return denied;
 
-  let body: { conversationId?: unknown; room?: unknown; prompt?: unknown; full?: unknown };
+  let body: { conversationId?: unknown; room?: unknown; prompt?: unknown; full?: unknown; prefs?: unknown };
   try { body = await req.json(); } catch { return Response.json({ error: "Body must be JSON." }, { status: 400 }); }
   const { conversationId, room, prompt } = body;
   if (typeof conversationId !== "string" || !/^[\w-]{1,64}$/.test(conversationId)) {
@@ -53,11 +54,13 @@ export async function POST(req: Request) {
               emit({ type: "permission_request", requestId: r.requestId, tool, summary })),
           });
         } else {
-          const workspace = getWorkspace();
+          // A Claude Code session opened from history keeps running in its own project folder.
+          const own = record.cwd ? validateWorkspace(record.cwd) : null;
+          const workspace = own?.ok ? own.path : getWorkspace();
           const skillsByAgent = await prepareSkills({ conversationId, room, prompt, workspace, firstTurn: !existing?.sdkSessionId, emit, signal: abort.signal });
           await runRoom({
             runId, conversationId, room, prompt, workspace, emit, signal: abort.signal,
-            sessionId: record.sdkSessionId, skillsByAgent, fullArena: body.full === true,
+            sessionId: record.sdkSessionId, skillsByAgent, fullArena: body.full === true, prefs: parseRunPrefs(body.prefs),
           });
         }
       } catch (err) {

@@ -13,10 +13,12 @@ function newId(): string {
   return crypto.randomUUID();
 }
 
-function loadStored(id: string): Transcript | null {
+type Stored = Transcript & { savedAt?: number };
+
+function loadStored(id: string): Stored | null {
   try {
     const raw = localStorage.getItem(storageKey(id));
-    return raw ? (JSON.parse(raw) as Transcript) : null;
+    return raw ? (JSON.parse(raw) as Stored) : null;
   } catch {
     return null;
   }
@@ -24,11 +26,11 @@ function loadStored(id: string): Transcript | null {
 
 function store(id: string, t: Transcript) {
   try {
-    localStorage.setItem(storageKey(id), JSON.stringify({ ...t, items: t.items.slice(-MAX_STORED_ITEMS) }));
+    localStorage.setItem(storageKey(id), JSON.stringify({ ...t, items: t.items.slice(-MAX_STORED_ITEMS), savedAt: Date.now() }));
   } catch { /* storage full or blocked: the transcript still lives in memory */ }
 }
 
-export function useConversation(room: RoomId, initialId?: string) {
+export function useConversation(room: RoomId, initialId?: string, sessionId?: string) {
   const [t, dispatch] = useReducer(reduce, initialTranscript);
   const [conversationId, setConversationId] = useState<string | undefined>(initialId);
   const abortRef = useRef<AbortController | null>(null);
@@ -36,12 +38,32 @@ export function useConversation(room: RoomId, initialId?: string) {
   // Bumped by + New / /clear. A run started before the bump must not write into the fresh chat.
   const generation = useRef(0);
 
-  // Hydrate a resumed chat from this browser's copy of its transcript.
+  // Open a chat: this browser's copy shows at once; the Claude Code session file (shared with the CLI)
+  // replaces it when it's newer, so a session continued in the terminal shows up here too.
   useEffect(() => {
+    let cancelled = false;
     setConversationId(initialId);
     const saved = initialId ? loadStored(initialId) : null;
     dispatch(saved ? { type: "hydrate", state: saved } : { type: "clear" });
-  }, [initialId]);
+    if (!initialId && !sessionId) return;
+    const query = initialId ? `c=${encodeURIComponent(initialId)}` : `s=${encodeURIComponent(sessionId!)}`;
+    fetch(`/api/history?${query}`, { cache: "no-store" })
+      .then(async (res) => {
+        const body = await res.json().catch(() => ({}));
+        if (cancelled) return;
+        if (!res.ok) {
+          if (sessionId) dispatch({ type: "error", message: body.error ?? "Couldn't open that Claude Code session." });
+          return;
+        }
+        setConversationId(body.conversationId);
+        if (sessionId) history.replaceState(null, "", roomHref(body.room, body.conversationId));
+        if (body.items?.length && body.updatedAt > (saved?.savedAt ?? 0)) {
+          dispatch({ type: "hydrate", state: { ...initialTranscript, items: body.items, cwd: body.cwd ?? "" } });
+        }
+      })
+      .catch(() => { /* offline: keep the local copy */ });
+    return () => { cancelled = true; };
+  }, [initialId, sessionId]);
 
   useEffect(() => {
     if (conversationId && t.items.length && !t.running) store(conversationId, t);

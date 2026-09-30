@@ -15,6 +15,8 @@ import styles from "./console.module.css";
 export interface ConsoleProps {
   room: RoomId;
   conversationId?: string;
+  /** A Claude Code session id to open (from history). */
+  sessionId?: string;
   label: string;
   placeholder: string;
   /** Shown above the input before the first message (the room's intro scene). */
@@ -33,8 +35,8 @@ const SLASH = [
   { cmd: "/help", help: "list commands and keys" },
 ];
 
-export function Console({ room, conversationId, label, placeholder, hero, scene, suggestions = [] }: ConsoleProps) {
-  const { t, dispatch, send, stop, answer, reset } = useConversation(room, conversationId);
+export function Console({ room, conversationId, sessionId, label, placeholder, hero, scene, suggestions = [] }: ConsoleProps) {
+  const { t, dispatch, send, stop, answer, reset } = useConversation(room, conversationId, sessionId);
   const pulled = useMemo(() => pulledAgents(t), [t]);
   const active = useMemo(() => activeAgents(t), [t]);
   const started = t.items.length > 0;

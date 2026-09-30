@@ -216,3 +216,19 @@ test("settings: edit an agent's prompt and goal, it persists, and reset restores
   await expect(page.getByLabel("Added goal")).toHaveValue("");
   await expect(page.getByRole("tab", { name: /Judge/ })).not.toContainText("edited");
 });
+
+test("Recents lists Claude Code history; opening a CLI session shows its transcript and resumes it", async ({ page }) => {
+  await page.goto("/");
+  const entry = page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: /Fix login bug/ });
+  await expect(entry).toContainText("Rivan-Simulation");
+  await entry.click();
+  await expect(page.getByText("Fix the login bug")).toBeVisible();
+  await expect(page.getByText("Found it: the token check ran before the cookie was read.")).toBeVisible();
+  await expect(page.getByText("Edit(src/auth.ts)")).toBeVisible();
+  await expect(page).toHaveURL(/\?c=/);
+  await page.reload();
+  await expect(page.getByText("Fix the login bug")).toBeVisible();
+  await page.locator("#prompt-input").fill("and add a test");
+  await page.keyboard.press("Enter");
+  await expect(page.getByText("Done. Fake run finished.")).toBeVisible({ timeout: 20_000 });
+});

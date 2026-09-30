@@ -7,16 +7,15 @@ import { AGENT_IDS, AGENTS } from "@/harness/agents";
 import { ROOMS, type RoomId } from "@/harness/rooms";
 import { Mascot } from "@/components/mascot/Mascot";
 import { Icon, type IconName } from "./Icon";
+import { roomHref } from "@/lib/routes";
 import styles from "./shell.module.css";
 
-interface Recent { id: string; room: RoomId; title: string; updatedAt: number }
+/** One entry of the unified history: a Claude Code session (CLI or app) or a fresh app chat. */
+interface Recent { sessionId: string | null; title: string; project: string | null; room: RoomId | null; updatedAt: number; href: string }
 
 export const SESSIONS_CHANGED = "gabo:sessions-changed";
 
-export function roomHref(room: RoomId, conversationId?: string): string {
-  const base = room === "home" ? "/" : room.startsWith("agent:") ? `/agents/${room.slice(6)}` : `/${room}`;
-  return conversationId ? `${base}?c=${encodeURIComponent(conversationId)}` : base;
-}
+export { roomHref };
 
 const NAV: { room: "home" | "library" | "arena" | "hackathon"; icon: IconName }[] = [
   { room: "home", icon: "home" },
@@ -33,7 +32,7 @@ export function Sidebar({ onClose }: { onClose: () => void }) {
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch("/api/sessions", { cache: "no-store" });
+      const res = await fetch("/api/history", { cache: "no-store" });
       if (!res.ok) throw new Error(String(res.status));
       setRecents(await res.json());
       setRecentsError(false);
@@ -111,15 +110,15 @@ export function Sidebar({ onClose }: { onClose: () => void }) {
         ))}
       </ul>
 
-      <div className={styles.recentsHead}>Recents</div>
+      <div className={styles.recentsHead}>Recents <span className={styles.recentsSub}>· Claude Code history</span></div>
       <ul className={styles.recents}>
         {recentsError && <li className={styles.recentsEmpty}>Couldn&apos;t load chats. <button className={styles.linkButton} onClick={load}>Retry</button></li>}
         {!recentsError && recents === null && <li className={styles.recentsEmpty}>Loading…</li>}
         {!recentsError && recents?.length === 0 && <li className={styles.recentsEmpty}>No chats yet.</li>}
         {recents?.map((r) => (
-          <li key={r.id}>
-            <Link href={roomHref(r.room, r.id)} className={styles.recent} title={r.title}>
-              <span className={styles.recentRoom}>{r.room.startsWith("agent:") ? r.room.slice(6) : r.room}</span>
+          <li key={r.href}>
+            <Link href={r.href} className={styles.recent} title={`${r.title}${r.project ? ` — ${r.project}` : ""}`}>
+              <span className={styles.recentRoom}>{r.room && r.room !== "home" ? (r.room.startsWith("agent:") ? r.room.slice(6) : r.room) : (r.project ?? "home")}</span>
               <span className={styles.recentTitle}>{r.title}</span>
             </Link>
           </li>
