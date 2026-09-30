@@ -8,7 +8,9 @@ export const VENDOR_DIR = path.join(process.cwd(), "vendor", "idea-arena");
 const FILES = ["SKILL.md", "bracket.py", "strategies.json", "rubric.md", "LICENSE"];
 export const QUICK_AGENTS = 16;
 
-const active = new Map<string, number>();
+// On globalThis so a Next dev hot reload mid-run doesn't forget a swap is in progress.
+const g = globalThis as unknown as { __gaboArenaActive?: Map<string, number> };
+const active = (g.__gaboArenaActive ??= new Map<string, number>());
 
 /**
  * Installs the arena skill into <workspace>/.claude/skills/idea-arena. It is renamed from `arena`
@@ -49,22 +51,59 @@ export async function withIdeaRubric<T>(dir: string, run: () => Promise<T>): Pro
     const left = (active.get(dir) ?? 1) - 1;
     if (left === 0) {
       active.delete(dir);
-      fs.copyFileSync(backup, rubric);
-      fs.rmSync(backup, { force: true });
+      if (fs.existsSync(backup)) {
+        fs.copyFileSync(backup, rubric);
+        fs.rmSync(backup, { force: true });
+      }
     } else {
       active.set(dir, left);
     }
   }
 }
 
-/** Blocks a bracket.py init bigger than --quick unless Gab confirmed a full run. */
+export const MAX_AGENTS = 100;
+const DEFAULT_AGENTS = 100;
+
+/** Drops an unquoted `#` comment, so `--quick` written in a comment doesn't count. */
+function stripComment(command: string): string {
+  let quote: string | null = null;
+  for (let i = 0; i < command.length; i++) {
+    const c = command[i];
+    if (quote) { if (c === quote) quote = null; continue; }
+    if (c === '"' || c === "'") quote = c;
+    else if (c === "#" && (i === 0 || /\s/.test(command[i - 1]))) return command.slice(0, i);
+  }
+  return command;
+}
+
+function tokenize(segment: string): string[] {
+  return [...segment.matchAll(/"([^"]*)"|'([^']*)'|(\S+)/g)].map((m) => m[1] ?? m[2] ?? m[3]);
+}
+
+/**
+ * Blocks a bracket.py `init` bigger than --quick unless Gab confirmed a full run, and anything over
+ * 100 either way. Reads the command the way argparse will: per shell segment, flags in any order,
+ * the last `--agents` wins, comments ignored.
+ */
 export function arenaSizeGuard(command: string, fullConfirmed: boolean): string | null {
-  if (fullConfirmed || !/bracket\.py["']?\s+(init|plan)\b/.test(command)) return null;
-  if (/\s--quick\b/.test(command)) return null;
-  const m = /--agents[=\s]+(\d+)/.exec(command);
-  const n = m ? Number(m[1]) : 100;
-  if (n <= QUICK_AGENTS) return null;
-  return `Blocked: a ${n}-agent arena needs Gab to confirm a full run in the Arena tab (add --full to the message). Run --quick (${QUICK_AGENTS} agents) first.`;
+  for (const segment of stripComment(command).split(/&&|\|\||[;|\n]/)) {
+    const tokens = tokenize(segment);
+    const at = tokens.findIndex((t) => /bracket\.py$/.test(t));
+    if (at === -1) continue;
+    const args = tokens.slice(at + 1);
+    if (!args.includes("init")) continue;
+    let agents: number | undefined;
+    args.forEach((t, j) => {
+      if (t === "--agents") agents = Number(args[j + 1]);
+      else if (t.startsWith("--agents=")) agents = Number(t.slice("--agents=".length));
+    });
+    const n = agents ?? (args.includes("--quick") ? QUICK_AGENTS : DEFAULT_AGENTS);
+    if (!Number.isFinite(n) || n > MAX_AGENTS) return `Blocked: the arena is capped at ${MAX_AGENTS} agents.`;
+    if (n > QUICK_AGENTS && !fullConfirmed) {
+      return `Blocked: a ${n}-agent arena needs Gab to confirm a full run in the Arena tab (add --full to the message). Run --quick (${QUICK_AGENTS} agents) first.`;
+    }
+  }
+  return null;
 }
 
 export function parsePythonVersion(out: string): boolean {

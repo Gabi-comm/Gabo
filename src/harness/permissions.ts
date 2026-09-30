@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import type { Decision } from "./events";
@@ -50,7 +51,34 @@ const PATH_KEYS = ["file_path", "notebook_path", "path"] as const;
 
 export function isInside(root: string, target: string): boolean {
   const rel = path.relative(path.resolve(root), path.resolve(root, target));
-  return rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel));
+  return rel === "" || (rel !== ".." && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel));
+}
+
+/**
+ * Resolves junctions and symlinks on the part of the path that exists, so a link inside the
+ * workspace that points elsewhere is judged by where it really goes.
+ */
+export function realPath(p: string): string {
+  let head = path.resolve(p);
+  const tail: string[] = [];
+  for (;;) {
+    try {
+      return path.join(fs.realpathSync.native(head), ...tail);
+    } catch {
+      const parent = path.dirname(head);
+      if (parent === head) return path.resolve(p);
+      tail.unshift(path.basename(head));
+      head = parent;
+    }
+  }
+}
+
+/** The fixed directory in front of the first wildcard of an absolute glob, e.g. `C:/Users/Gab/**` → `C:/Users/Gab`. */
+function globRoot(pattern: string): string | null {
+  if (!path.isAbsolute(pattern) && !/^[A-Za-z]:/.test(pattern)) return null;
+  const firstWild = pattern.search(/[*?[{]/);
+  const fixed = firstWild === -1 ? pattern : pattern.slice(0, firstWild);
+  return fixed.replace(/[\\/][^\\/]*$/, "") || fixed;
 }
 
 /**
@@ -64,18 +92,26 @@ export function guardToolInput(
   readRoots: string[] = [],
 ): string | null {
   const readOnly = tool === "Read" || tool === "Glob" || tool === "Grep";
+  const candidates: string[] = [];
   for (const k of PATH_KEYS) {
     const v = input[k];
-    if (typeof v !== "string" || v === "") continue;
-    const abs = path.resolve(workspace, v);
-    if (isInside(workspace, abs)) continue;
-    if (readOnly && readRoots.some((r) => isInside(r, abs))) continue;
+    if (typeof v === "string" && v !== "") candidates.push(v);
+  }
+  if (tool === "Glob" && typeof input.pattern === "string") {
+    const root = globRoot(input.pattern);
+    if (root) candidates.push(root);
+  }
+  const realWorkspace = realPath(workspace);
+  for (const v of candidates) {
+    const abs = realPath(path.resolve(workspace, v));
+    if (isInside(realWorkspace, abs)) continue;
+    if (readOnly && readRoots.some((r) => isInside(realPath(r), abs))) continue;
     return `${tool} blocked: ${abs} is outside the workspace ${workspace}`;
   }
   return null;
 }
 
-/** Key for "Yes, for this session" — exact command for Bash, tool name otherwise. */
+/** Key for "Yes, for this chat": the exact command for shell tools, the tool name otherwise. */
 export function sessionRuleKey(tool: string, input: Record<string, unknown>): string {
-  return tool === "Bash" ? `Bash:${String(input.command ?? "")}` : tool;
+  return tool === "Bash" || tool === "PowerShell" ? `${tool}:${String(input.command ?? "")}` : tool;
 }
