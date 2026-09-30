@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { isAgentId, type AgentId } from "@/harness/agents";
 import { Mascot } from "@/components/mascot/Mascot";
+import { AgentStage } from "@/components/mascot/AgentStage";
 import styles from "./settings.module.css";
 
 interface AgentRow {
@@ -173,7 +174,7 @@ export function AgentSettings({ initialAgent }: { initialAgent?: string }) {
           ) : (
             <>
               <div className={styles.editorHead}>
-                <Mascot kind={current.id} size={72} />
+                <AgentStage agent={current.id} label={current.name} mascotWidth={60} className={styles.headStage} />
                 <div>
                   <h2>{current.name}</h2>
                   <p className={styles.muted}>{current.tagline}</p>

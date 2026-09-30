@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { AGENT_IDS, AGENTS } from "@/harness/agents";
 import { ROOM_IDS, ROOMS } from "@/harness/rooms";
-import { Mascot } from "@/components/mascot/Mascot";
+import { AgentStage } from "@/components/mascot/AgentStage";
 import styles from "./agents.module.css";
 
 export const metadata = { title: "Agents · Gabo" };
@@ -11,7 +11,6 @@ export default function AgentsPage() {
     <div className={styles.page}>
       <header className={styles.head}>
         <h1>Agents</h1>
-        <p>Twelve roles. Rooms pull the ones a task needs; the Caveman sits in every room.</p>
       </header>
       <ul className={styles.list}>
         {AGENT_IDS.map((id) => {
@@ -19,7 +18,7 @@ export default function AgentsPage() {
           return (
             <li key={id}>
               <Link href={`/agents/${id}`} className={styles.row}>
-                <Mascot kind={id} size={64} />
+                <AgentStage agent={id} label={AGENTS[id].name} mascotWidth={58} className={styles.stage} />
                 <span className={styles.name}>{AGENTS[id].name}</span>
                 <span className={styles.tag}>{AGENTS[id].tagline}</span>
                 <span className={styles.rooms}>{rooms.length ? rooms.join(" · ") : "solo only"}</span>

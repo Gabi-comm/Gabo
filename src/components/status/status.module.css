@@ -1,0 +1,43 @@
+.page { flex: 1; min-height: 0; overflow-y: auto; padding: 40px 24px; }
+.head { max-width: 1040px; margin: 0 auto 18px; display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; }
+.head h1 { font-size: 20px; margin: 0 0 4px; }
+.head p { margin: 0; }
+.muted { color: var(--muted); }
+.error { max-width: 1040px; margin: 0 auto 12px; color: var(--err); }
+
+.grid { max-width: 1040px; margin: 0 auto; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.card { border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; min-width: 0; }
+.wide { grid-column: 1 / -1; }
+.card h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin: 0 0 10px; }
+.card h3 { font-size: 13px; margin: 14px 0 6px; }
+.card dl { margin: 0; }
+.row { display: grid; grid-template-columns: 15ch minmax(0, 1fr); gap: 10px; padding: 3px 0; }
+.row dt { color: var(--muted); }
+.row dd { margin: 0; overflow-wrap: anywhere; }
+
+.checks { list-style: none; margin: 0 0 8px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.check { display: grid; grid-template-columns: 1.4ch 18ch minmax(0, 1fr); gap: 8px; align-items: baseline; }
+.dot { font-size: 11px; color: var(--err); }
+.dot[data-ok="true"] { color: var(--ok); }
+.checkName { font-weight: 600; }
+.check .muted { overflow-wrap: anywhere; font-size: 12.5px; }
+
+.mcp { list-style: none; margin: 0; padding: 0; columns: 2 320px; column-gap: 24px; font-size: 13px; }
+.mcp li { break-inside: avoid; padding: 2px 0; overflow-wrap: anywhere; }
+.status { display: inline-block; min-width: 11ch; font-size: 12px; }
+.status[data-status="connected"] { color: var(--ok); }
+.status[data-status="failed"] { color: var(--err); }
+.status[data-status="needs-auth"], .status[data-status="pending"] { color: var(--warn); }
+.mcpName { overflow-wrap: anywhere; }
+.plugins { margin: 0; color: #d9d8d2; font-size: 13px; line-height: 1.8; }
+
+.button { background: var(--raised); border: 1px solid var(--line-strong); border-radius: 8px; padding: 6px 14px; }
+.button:hover:not(:disabled) { border-color: #55554f; }
+.button:disabled { opacity: 0.55; cursor: default; }
+
+@media (max-width: 767px) {
+  .page { padding: 56px 12px 24px; }
+  .grid { grid-template-columns: minmax(0, 1fr); }
+  .check { grid-template-columns: 1.4ch minmax(0, 1fr); }
+  .check .muted { grid-column: 2; }
+}

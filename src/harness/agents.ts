@@ -31,6 +31,21 @@ export const AGENTS: Record<AgentId, AgentMeta> = {
   emperor: { id: "emperor", name: "The Emperor", tagline: "Summons a hundred minds, crowns one idea.", verb: "Summoning" },
 };
 
+/** Agents Gab creates in Settings: ids are "x-" + a slug of the name. */
+export type CustomId = `x-${string}`;
+/** A built-in agent or one of Gab's own. */
+export type AgentKey = AgentId | CustomId;
+
+export const CUSTOM_ID = /^x-[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+export function isCustomId(value: unknown): value is CustomId {
+  return typeof value === "string" && value.length <= 48 && CUSTOM_ID.test(value);
+}
+
+export function isAgentKey(value: unknown): value is AgentKey {
+  return isAgentId(value) || isCustomId(value);
+}
+
 export function isAgentId(value: unknown): value is AgentId {
   return typeof value === "string" && (AGENT_IDS as readonly string[]).includes(value);
 }

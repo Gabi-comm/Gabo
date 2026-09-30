@@ -173,11 +173,12 @@ test("mascots on the page loop their own animation; tiny sidebar ones wait for h
   }
   expect(seen.size).toBe(12);
 
-  const sidebarJudge = page.getByRole("navigation", { name: "Main" }).locator('svg.mascot[data-kind="judge"]');
+  await page.goto("/settings");
+  const tabJudge = page.getByRole("tab", { name: /Judge/ }).locator('svg.mascot[data-kind="judge"]');
   await page.mouse.move(900, 20);
-  expect(await sidebarJudge.evaluate((el) => el.getAnimations({ subtree: true }).length)).toBe(0);
-  await sidebarJudge.hover();
-  await expect.poll(() => sidebarJudge.evaluate((el) => el.getAnimations({ subtree: true }).length)).toBeGreaterThan(0);
+  expect(await tabJudge.evaluate((el) => el.getAnimations({ subtree: true }).length)).toBe(0);
+  await tabJudge.hover();
+  await expect.poll(() => tabJudge.evaluate((el) => el.getAnimations({ subtree: true }).length)).toBeGreaterThan(0);
 });
 
 test("sidebar toggles on desktop, remembers it, and Ctrl+B flips it", async ({ page }) => {
@@ -456,4 +457,31 @@ test("Plugins: connect ChatGPT with a key (never shown back), test it, and see C
   await openclaw.getByLabel("Base URL").fill("http://evil.example/v1");
   await openclaw.getByRole("button", { name: "Save" }).click();
   await expect(openclaw.getByRole("alert")).toContainText("https");
+});
+
+test("Agents has no sidebar sub-tabs and no filler sentence; Plugins has no key-storage sentence", async ({ page }) => {
+  await page.goto("/agents");
+  const nav = page.getByRole("navigation", { name: "Main" });
+  await expect(nav.getByRole("button", { name: /agents/i })).toHaveCount(0);
+  await expect(nav.locator('svg.mascot[data-kind="judge"]')).toHaveCount(0);
+  await expect(page.getByText("Twelve roles.")).toHaveCount(0);
+  await page.goto("/plugins");
+  await expect(page.getByText("Keys stay in")).toHaveCount(0);
+});
+
+test("Status shows Claude Code version, model, account, connectivity and tool statuses", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Status" }).click();
+  await expect(page).toHaveURL(/\/status$/);
+  const cc = page.getByRole("region", { name: "Claude Code" });
+  await expect(cc).toContainText("Version");
+  await expect(cc).toContainText("2.1.");
+  await expect(cc).toContainText("Default model");
+  await expect(page.getByRole("region", { name: "Account" })).toContainText("Claude Pro");
+  await expect(page.getByRole("region", { name: "Connectivity" })).toContainText("Anthropic API");
+  const tools = page.getByRole("region", { name: "Tools" });
+  await expect(tools).toContainText("plugin:github:github");
+  await expect(tools).toContainText("connected");
+  await page.getByRole("button", { name: "Refresh" }).click();
+  await expect(cc).toContainText("Version");
 });

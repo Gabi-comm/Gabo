@@ -1,0 +1,103 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { exec } from "node:child_process";
+import { detectPython } from "@/harness/arena";
+import { usableProviders } from "@/harness/providers";
+import { getClaudeInfo } from "./claudeInfo";
+import { FAKE, getWorkspace } from "./config";
+import { loadProviders } from "./providers";
+
+export interface Check { name: string; ok: boolean; detail: string; ms?: number }
+
+export interface Status {
+  checkedAt: number;
+  claudeCode: { cliVersion: string | null; bundledVersion: string | null; sdkVersion: string | null; defaultModel: string; models: string[]; outputStyle: string; permissionMode: string };
+  account: { email?: string; plan?: string; loggedIn: boolean };
+  connectivity: Check[];
+  tools: { mcp: { name: string; status: string; error?: string }[]; plugins: string[]; commands: number; otherAis: string[] };
+  gabo: Check[];
+}
+
+function readJson(file: string): Record<string, unknown> | null {
+  try { return JSON.parse(fs.readFileSync(file, "utf8")); } catch { return null; }
+}
+
+const SDK_DIR = path.join(process.cwd(), "node_modules", "@anthropic-ai", "claude-agent-sdk");
+
+function cliVersion(): Promise<string | null> {
+  return new Promise((resolve) => {
+    exec("claude --version", { timeout: 8000, windowsHide: true }, (err, stdout) => {
+      resolve(err ? null : (stdout.trim().split(/\s+/)[0] || null));
+    });
+  });
+}
+
+async function reach(name: string, url: string, describe: (res: Response) => Promise<string>): Promise<Check> {
+  const started = Date.now();
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(8000), cache: "no-store" });
+    return { name, ok: true, detail: await describe(res), ms: Date.now() - started };
+  } catch (err) {
+    return { name, ok: false, detail: err instanceof Error ? err.message : String(err), ms: Date.now() - started };
+  }
+}
+
+const FAKE_STATUS: Status = {
+  checkedAt: 0,
+  claudeCode: { cliVersion: "2.1.285", bundledVersion: "2.1.285", sdkVersion: "0.3.285", defaultModel: "default", models: ["default", "opus", "haiku"], outputStyle: "default", permissionMode: "default" },
+  account: { email: "gab@example.com", plan: "Claude Pro", loggedIn: true },
+  connectivity: [
+    { name: "Anthropic API", ok: true, detail: "reachable (HTTP 404 on /)", ms: 80 },
+    { name: "Anthropic status", ok: true, detail: "All Systems Operational", ms: 120 },
+  ],
+  tools: { mcp: [{ name: "plugin:github:github", status: "connected" }, { name: "claude.ai Gmail", status: "needs-auth" }], plugins: ["superpowers", "github"], commands: 3, otherAis: [] },
+  gabo: [{ name: "Workspace", ok: true, detail: "C:/fake/workspace" }, { name: "Python (Arena)", ok: true, detail: "python" }],
+};
+
+/** Everything the CLI's /status shows, plus Gabo's own checks. Every part is independent: one failure never hides the rest. */
+export async function getStatus(refresh = false): Promise<Status> {
+  if (FAKE) return { ...FAKE_STATUS, checkedAt: Date.now() };
+  const settings = readJson(path.join(os.homedir(), ".claude", "settings.json")) ?? {};
+  const [cli, info, python, api, statusPage] = await Promise.all([
+    cliVersion(),
+    getClaudeInfo(refresh).catch(() => null),
+    detectPython(),
+    reach("Anthropic API", "https://api.anthropic.com/", async (res) => `reachable (HTTP ${res.status} on /)`),
+    reach("Anthropic status", "https://status.anthropic.com/api/v2/status.json", async (res) => {
+      const j = (await res.json().catch(() => null)) as { status?: { description?: string } } | null;
+      return j?.status?.description ?? `HTTP ${res.status}`;
+    }),
+  ]);
+  const workspace = getWorkspace();
+  const ais = usableProviders(loadProviders());
+
+  return {
+    checkedAt: Date.now(),
+    claudeCode: {
+      cliVersion: cli,
+      bundledVersion: (readJson(path.join(SDK_DIR, "manifest.json"))?.version as string | undefined) ?? null,
+      sdkVersion: (readJson(path.join(SDK_DIR, "package.json"))?.version as string | undefined) ?? null,
+      defaultModel: typeof settings.model === "string" ? settings.model : "default",
+      models: info?.models.map((m) => m.value) ?? [],
+      outputStyle: info?.outputStyle ?? "unknown",
+      permissionMode: info?.defaultMode ?? "default",
+    },
+    account: { email: info?.account.email, plan: info?.account.subscriptionType, loggedIn: !!info?.account.subscriptionType || !!info?.account.email },
+    connectivity: [
+      { name: "Claude Code login", ok: !!info, detail: info ? "Claude Code started and answered" : "Claude Code didn't start. Run `claude`, then /login." },
+      api,
+      statusPage,
+    ],
+    tools: {
+      mcp: info?.mcp ?? [],
+      plugins: info?.plugins?.map((p) => p.name) ?? [],
+      commands: info?.commands.length ?? 0,
+      otherAis: ais.map((p) => `${p.label} (${p.model})`),
+    },
+    gabo: [
+      { name: "Workspace", ok: fs.existsSync(workspace), detail: workspace },
+      { name: "Python (Arena)", ok: !!python, detail: python ?? "not found; the Arena needs Python 3.8+" },
+    ],
+  };
+}

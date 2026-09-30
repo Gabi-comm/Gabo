@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
-import { AGENT_IDS, AGENTS } from "@/harness/agents";
 import { ROOMS, type RoomId } from "@/harness/rooms";
 import { Mascot } from "@/components/mascot/Mascot";
 import { Icon, type IconName } from "./Icon";
@@ -28,7 +27,6 @@ const WORKSPACE_OPEN_KEY = "gabo:workspace-open";
 
 export function Sidebar({ onClose }: { onClose: () => void }) {
   const pathname = usePathname();
-  const [agentsOpen, setAgentsOpen] = useState(pathname.startsWith("/agents"));
   const [recents, setRecents] = useState<Recent[] | null>(null);
   const [recentsError, setRecentsError] = useState(false);
   const inWorkspace = WORKSPACE_PATHS.includes(pathname);
@@ -72,7 +70,6 @@ export function Sidebar({ onClose }: { onClose: () => void }) {
     return () => window.removeEventListener(SESSIONS_CHANGED, load);
   }, [load]);
 
-  useEffect(() => { if (pathname.startsWith("/agents")) setAgentsOpen(true); }, [pathname]);
 
   const currentRoom: RoomId =
     pathname === "/" ? "home" : pathname.startsWith("/agents/") ? (`agent:${pathname.split("/")[2]}` as RoomId) : (pathname.slice(1) as RoomId);
@@ -99,33 +96,9 @@ export function Sidebar({ onClose }: { onClose: () => void }) {
           </Link>
         </li>
         <li>
-          <div className={styles.navRow}>
-            <Link href="/agents" className={styles.navItem} aria-current={pathname === "/agents" ? "page" : undefined}>
-              <Icon name="agents" /> Agents
-            </Link>
-            <button
-              className={styles.disclosure}
-              onClick={() => setAgentsOpen((v) => !v)}
-              aria-expanded={agentsOpen}
-              aria-controls="agent-subtabs"
-              aria-label={agentsOpen ? "Hide agents" : "Show agents"}
-              data-open={agentsOpen}
-            >
-              <Icon name="chevron" size={14} />
-            </button>
-          </div>
-          {agentsOpen && (
-            <ul id="agent-subtabs" className={styles.subnav}>
-              {AGENT_IDS.map((id) => (
-                <li key={id}>
-                  <Link href={`/agents/${id}`} className={styles.subItem} aria-current={pathname === `/agents/${id}` ? "page" : undefined}>
-                    <Mascot kind={id} size={22} sticker={false} />
-                    {AGENTS[id].name.replace("The ", "")}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          )}
+          <Link href="/agents" className={styles.navItem} aria-current={pathname.startsWith("/agents") ? "page" : undefined}>
+            <Icon name="agents" /> Agents
+          </Link>
         </li>
         <li>
           <button
@@ -152,6 +125,11 @@ export function Sidebar({ onClose }: { onClose: () => void }) {
         <li>
           <Link href="/plugins" className={styles.navItem} aria-current={pathname === "/plugins" ? "page" : undefined}>
             <Icon name="plugins" /> Plugins
+          </Link>
+        </li>
+        <li>
+          <Link href="/status" className={styles.navItem} aria-current={pathname === "/status" ? "page" : undefined}>
+            <Icon name="status" /> Status
           </Link>
         </li>
       </ul>

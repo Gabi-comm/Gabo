@@ -3,7 +3,7 @@
 import { AGENTS, type AgentId } from "@/harness/agents";
 import { ROOMS, type BaseRoomId, type RoomId } from "@/harness/rooms";
 import { Console } from "@/components/cli/Console";
-import { Mascot } from "@/components/mascot/Mascot";
+import { AgentStage } from "@/components/mascot/AgentStage";
 import {
   ArenaIntro, ArenaWidget, HackathonIntro, HackathonWidget, LibraryIntro, LibraryWidget, OfficeScene,
 } from "@/components/scenes/scenes";
@@ -36,7 +36,7 @@ export function RoomConsole({ room, conversationId, sessionId }: { room: RoomId;
         placeholder={`Give ${AGENTS[id].name} a task`}
         hero={
           <div className={styles.soloHero}>
-            <Mascot kind={id} size={150} />
+            <AgentStage agent={id} label={AGENTS[id].name} mascotWidth={56} className={styles.soloStage} />
             <div className={styles.soloName}>{AGENTS[id].name}</div>
             <div className={styles.soloTag}>{AGENTS[id].tagline}</div>
           </div>

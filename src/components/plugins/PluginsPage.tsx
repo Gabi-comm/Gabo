@@ -47,7 +47,7 @@ export function PluginsPage() {
         <h1>Plugins</h1>
         <p>
           Connect other AIs so Claude can consult them. Each one becomes a tool (<code>mcp__gabo-ai__ask_…</code>) that Claude asks
-          your permission to use. Keys stay in <code>.data/ai-providers.json</code> on this machine and are never shown again.
+          your permission to use.
         </p>
       </header>
 

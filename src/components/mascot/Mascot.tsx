@@ -1,6 +1,7 @@
 import { AGENTS } from "@/harness/agents";
 import { BLUE, EYE, EYE_RECT, HAND, STICKER, bodyRects, type Pose, type Rect } from "./grid";
 import { PROPS, type MascotKind, type Px } from "./props";
+import { animKindFor, assembleProps, bodyFill, type Costume } from "@/harness/costume";
 
 // Canvas around the 17×14 grid, with room for hats above and held props to the right.
 const VB_X = -4;
@@ -34,6 +35,8 @@ export interface ArtProps {
   flip?: boolean;
   /** White sticker outline, as in the brand sheet. */
   sticker?: boolean;
+  /** A custom agent's outfit: parts per slot plus body colour. Overrides `kind`'s props. */
+  costume?: Costume;
 }
 
 /**
@@ -41,9 +44,10 @@ export interface ArtProps {
  * `.m-hat` and `.m-held` are wrapped so that 0,0 is their pivot (head top / the hand); the hover
  * animations in mascot.css rotate and move them around that point.
  */
-export function MascotArt({ kind = "base", pose = "stand", flip = false, sticker = true }: ArtProps) {
+export function MascotArt({ kind = "base", pose = "stand", flip = false, sticker = true, costume }: ArtProps) {
   const body = bodyRects(pose);
-  const p = PROPS[kind];
+  const p = costume ? assembleProps(costume) : PROPS[kind];
+  const fill = (costume && bodyFill(costume)) || BLUE;
   const [hx, hy] = HAND[pose];
   const [px, py] = HEAD_PIVOT;
   const head = (p.head ?? []).map(([x, y, w, h, c]) => [x - px, y - py, w, h, c] as const);
@@ -54,7 +58,7 @@ export function MascotArt({ kind = "base", pose = "stand", flip = false, sticker
         {sticker && <Sticker rects={[...body, ...(p.back ?? []), ...(p.front ?? [])]} />}
         <g shapeRendering="crispEdges">
           <Fills rects={p.back ?? []} prefix="b" />
-          {body.map((r, i) => rect(r, `m${i}`, BLUE))}
+          {body.map((r, i) => rect(r, `m${i}`, fill))}
           <Fills rects={p.front ?? []} prefix="f" />
           <g className="m-eye">{rect(EYE_RECT, "eye", EYE)}</g>
           <g className="m-face"><Fills rects={p.face ?? []} prefix="c" /></g>
@@ -81,30 +85,43 @@ export function MascotArt({ kind = "base", pose = "stand", flip = false, sticker
 }
 
 export interface MascotProps extends ArtProps {
-  /** Rendered width in px. */
+  /** Rendered width in px (or user units when nested in another SVG). */
   size?: number;
   title?: string;
   className?: string;
   /** "loop" plays the role animation continuously; "hover" waits for hover or focus. Default: loop from 40px up. */
   animate?: "loop" | "hover";
+  /** Position when nested inside another SVG (e.g. a Backdrop). */
+  x?: number;
+  y?: number;
 }
 
 /** Below this size a loop would be visual noise (a sidebar of twelve bouncing icons), so it waits for hover. */
 const LOOP_MIN_SIZE = 40;
 
+/** The rendered height for a given width. */
+export const mascotHeight = (width: number) => (width * VB_H) / VB_W;
+/** Where the feet are, as a fraction of the rendered height (grid row 14 inside the viewBox). */
+export const FEET_AT = (14 - VB_Y) / VB_H;
+
 /** A standalone mascot. It loops its role animation, or (when small) plays it on hover of itself or a link/button around it. */
-export function Mascot({ size = 96, title, className, animate, ...art }: MascotProps) {
+export function Mascot({ size = 96, title, className, animate, x, y, ...art }: MascotProps) {
   const kind = art.kind ?? "base";
+  const custom = !!art.costume;
   // Agents hold their prop out in front of them unless a pose is asked for.
-  const pose = art.pose ?? (PROPS[kind].held ? "hold" : "stand");
-  const label = title ?? (kind === "base" || kind === "studying" ? "Gabo mascot" : AGENTS[kind].name);
+  const hasHeld = custom ? !!assembleProps(art.costume!).held : !!PROPS[kind].held;
+  const pose = art.pose ?? (hasHeld ? "hold" : "stand");
+  const label = title ?? (custom ? "Custom agent" : kind === "base" || kind === "studying" ? "Gabo mascot" : AGENTS[kind].name);
   return (
     <svg
       className={`mascot${className ? ` ${className}` : ""}`}
-      data-kind={kind}
+      data-kind={custom ? animKindFor(art.costume!) : kind}
+      data-custom={custom || undefined}
       data-animate={animate ?? (size >= LOOP_MIN_SIZE ? "loop" : "hover")}
+      x={x}
+      y={y}
       width={size}
-      height={(size * VB_H) / VB_W}
+      height={mascotHeight(size)}
       viewBox={`${VB_X} ${VB_Y} ${VB_W} ${VB_H}`}
       role="img"
       aria-label={label}

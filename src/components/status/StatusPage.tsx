@@ -1,0 +1,129 @@
+"use client";
+
+import { useCallback, useEffect, useState } from "react";
+import styles from "./status.module.css";
+
+interface Check { name: string; ok: boolean; detail: string; ms?: number }
+interface Status {
+  checkedAt: number;
+  claudeCode: { cliVersion: string | null; bundledVersion: string | null; sdkVersion: string | null; defaultModel: string; models: string[]; outputStyle: string; permissionMode: string };
+  account: { email?: string; plan?: string; loggedIn: boolean };
+  connectivity: Check[];
+  tools: { mcp: { name: string; status: string; error?: string }[]; plugins: string[]; commands: number; otherAis: string[] };
+  gabo: Check[];
+}
+
+function Row({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className={styles.row}>
+      <dt>{label}</dt>
+      <dd>{children}</dd>
+    </div>
+  );
+}
+
+function CheckRow({ c }: { c: Check }) {
+  return (
+    <li className={styles.check}>
+      <span className={styles.dot} data-ok={c.ok} aria-hidden="true">●</span>
+      <span className={styles.checkName}>{c.name}</span>
+      <span className={styles.muted}>{c.ok ? "ok" : "problem"} · {c.detail}{c.ms !== undefined ? ` · ${c.ms} ms` : ""}</span>
+    </li>
+  );
+}
+
+export function StatusPage() {
+  const [status, setStatus] = useState<Status | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async (refresh = false) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/status${refresh ? "?refresh=1" : ""}`, { cache: "no-store" });
+      if (!res.ok) throw new Error(`The server answered ${res.status}.`);
+      setStatus(await res.json());
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const mcpCounts = status?.tools.mcp.reduce<Record<string, number>>((acc, m) => ({ ...acc, [m.status]: (acc[m.status] ?? 0) + 1 }), {}) ?? {};
+
+  return (
+    <div className={styles.page}>
+      <header className={styles.head}>
+        <div>
+          <h1>Status</h1>
+          <p className={styles.muted}>{status ? `Checked ${new Date(status.checkedAt).toLocaleTimeString()}` : "Checking…"}</p>
+        </div>
+        <button className={styles.button} onClick={() => load(true)} disabled={loading}>{loading ? "Checking…" : "Refresh"}</button>
+      </header>
+      {error && <div className={styles.error} role="alert">Couldn&apos;t check: {error}</div>}
+      {!status && loading && <p className={styles.muted}>Starting Claude Code to read its status (a few seconds)…</p>}
+      {status && (
+        <div className={styles.grid}>
+          <section className={styles.card} aria-label="Claude Code">
+            <h2>Claude Code</h2>
+            <dl>
+              <Row label="Version">{status.claudeCode.bundledVersion ?? "unknown"} <span className={styles.muted}>(used by Gabo)</span></Row>
+              <Row label="CLI on PATH">{status.claudeCode.cliVersion ?? "not found"}</Row>
+              <Row label="Agent SDK">{status.claudeCode.sdkVersion ?? "unknown"}</Row>
+              <Row label="Default model">{status.claudeCode.defaultModel}</Row>
+              <Row label="Models">{status.claudeCode.models.join(", ") || "—"}</Row>
+              <Row label="Permission mode">{status.claudeCode.permissionMode}</Row>
+              <Row label="Output style">{status.claudeCode.outputStyle}</Row>
+            </dl>
+          </section>
+
+          <section className={styles.card} aria-label="Account">
+            <h2>Account</h2>
+            <dl>
+              <Row label="Signed in">{status.account.loggedIn ? "yes" : "no — run `claude`, then /login"}</Row>
+              <Row label="Plan">{status.account.plan ?? "—"}</Row>
+              <Row label="Email">{status.account.email ?? "—"}</Row>
+              <Row label="Billing">subscription (API key ignored)</Row>
+            </dl>
+          </section>
+
+          <section className={styles.card} aria-label="Connectivity">
+            <h2>Connectivity</h2>
+            <ul className={styles.checks}>{status.connectivity.map((c) => <CheckRow key={c.name} c={c} />)}</ul>
+          </section>
+
+          <section className={styles.card} aria-label="Gabo">
+            <h2>Gabo</h2>
+            <ul className={styles.checks}>{status.gabo.map((c) => <CheckRow key={c.name} c={c} />)}</ul>
+            <dl>
+              <Row label="Other AIs">{status.tools.otherAis.join(", ") || "none connected (Plugins)"}</Row>
+            </dl>
+          </section>
+
+          <section className={`${styles.card} ${styles.wide}`} aria-label="Tools">
+            <h2>Tools</h2>
+            <p className={styles.muted}>
+              {status.tools.commands} commands · {status.tools.plugins.length} plugins · {status.tools.mcp.length} MCP servers
+              {Object.entries(mcpCounts).map(([k, v]) => ` · ${v} ${k}`).join("")}
+            </p>
+            <ul className={styles.mcp}>
+              {status.tools.mcp.map((m) => (
+                <li key={m.name}>
+                  <span className={styles.status} data-status={m.status}>{m.status}</span>
+                  <span className={styles.mcpName}>{m.name}</span>
+                  {m.error && <span className={styles.muted}> — {m.error}</span>}
+                </li>
+              ))}
+            </ul>
+            <h3>Plugins</h3>
+            <p className={styles.plugins}>{status.tools.plugins.join(" · ") || "none"}</p>
+          </section>
+        </div>
+      )}
+    </div>
+  );
+}

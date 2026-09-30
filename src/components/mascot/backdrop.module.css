@@ -1,0 +1,21 @@
+.backdrop { display: block; width: 100%; height: auto; border-radius: 10px; overflow: hidden; }
+.backdrop g, .backdrop rect, .backdrop path { transform-box: fill-box; }
+
+.flicker { animation: flicker 2.4s steps(3) infinite; }
+@keyframes flicker { 40% { opacity: 0.6; } 70% { opacity: 1; } }
+.rain { animation: rain 0.9s linear infinite; }
+@keyframes rain { from { transform: translateY(-8px); } to { transform: translateY(8px); } }
+.blink { animation: blinkCur 1s steps(2) infinite; }
+@keyframes blinkCur { 50% { opacity: 0; } }
+.buzz { animation: buzz 0.6s steps(2) infinite; }
+@keyframes buzz { 50% { transform: translate(1.5px, -1px); } }
+.fire { animation: fire 0.5s steps(2) infinite; transform-origin: 50% 100%; }
+@keyframes fire { 50% { transform: scale(0.9, 1.1); } }
+.twinkle { animation: twinkle 1.6s steps(2) infinite; }
+@keyframes twinkle { 50% { opacity: 0.2; } }
+.waves { animation: waves 3s ease-in-out infinite alternate; }
+@keyframes waves { to { transform: translateX(-6px); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .flicker, .rain, .blink, .buzz, .fire, .twinkle, .waves { animation: none; }
+}
