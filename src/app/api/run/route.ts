@@ -11,6 +11,7 @@ import { AI_SERVER, aiSystemNote, buildAiServer } from "@/harness/aiTools";
 import { loadProviders } from "@/server/providers";
 import { loadCustomAgents } from "@/server/customAgents";
 import { loadLocal } from "@/server/localLlm";
+import { loadBudget } from "@/server/budget";
 import { appendUsage, recordRateLimit } from "@/server/usageLog";
 import { FAKE, getWorkspace, sessions, validateWorkspace } from "@/server/config";
 import { prepareSkills } from "@/server/skills";
@@ -35,6 +36,7 @@ export async function POST(req: Request) {
   if (!isRoomId(room)) return Response.json({ error: "Unknown room." }, { status: 400 });
   const customAgents = loadCustomAgents();
   const local = loadLocal();
+  const budget = loadBudget();
   if (room.startsWith("agent:x-") && !customAgents.some((a) => `agent:${a.id}` === room)) {
     return Response.json({ error: "That agent was deleted." }, { status: 404 });
   }
@@ -76,7 +78,7 @@ export async function POST(req: Request) {
       try {
         if (FAKE) {
           await fakeRun({
-            room, prompt, emit, signal: abort.signal, prefs: parseRunPrefs(body.prefs), images, team, customAgents, local,
+            room, prompt, emit, signal: abort.signal, prefs: parseRunPrefs(body.prefs), images, team, customAgents, local, budget,
             ask: async (tool, summary, extra = {}) => {
               let requestId = "";
               const decision = await broker.request(runId, { tool, summary, input: {}, ...extra }, (r) => {
@@ -97,7 +99,7 @@ export async function POST(req: Request) {
           const skillsByAgent = await prepareSkills({ conversationId, room, prompt, workspace, firstTurn: !existing?.sdkSessionId, emit, signal: abort.signal, team, customAgents });
           await runRoom({
             runId, conversationId, room, prompt, workspace, emit, signal: abort.signal,
-            sessionId: record.sdkSessionId, skillsByAgent, fullArena: body.full === true, prefs: parseRunPrefs(body.prefs), images, team, customAgents, local,
+            sessionId: record.sdkSessionId, skillsByAgent, fullArena: body.full === true, prefs: parseRunPrefs(body.prefs), images, team, customAgents, local, budget,
             ...(ais.length ? { mcpServers: { [AI_SERVER]: buildAiServer(ais) }, systemNote: aiSystemNote(ais) } : {}),
           });
         }

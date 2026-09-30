@@ -6,6 +6,7 @@ import type { Item } from "@/components/cli/transcript";
 import { roomHref } from "@/lib/routes";
 import { FAKE, sessions } from "./config";
 import { loadPins } from "./pins";
+import { FAKE_COMPACT_PREFIX } from "./newSession";
 
 export interface HistoryEntry {
   /** Claude Code session id, or null for an app chat that hasn't started a session yet. */
@@ -45,6 +46,14 @@ const FAKE_MESSAGES = [
   ] } },
   { type: "user", parent_tool_use_id: null, message: { role: "user", content: [{ type: "tool_result", tool_use_id: "t1", content: "Updated src/auth.ts" }] } },
 ];
+
+/** Fake mode: a "New session" copy reads back as its compact summary. */
+function fakeCompacted(sessionId: string) {
+  const info = { sessionId, summary: "continued", cwd: "C:/fake/workspace", lastModified: Date.now() };
+  const messages = [{ type: "user", parent_tool_use_id: null, message: { role: "user", content:
+    "This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.\n\nSummary:\n1. Gab asked for help; the fake run answered.\n2. Nothing is pending." } }];
+  return { info, messages };
+}
 
 async function sdk() {
   return import("@anthropic-ai/claude-agent-sdk");
@@ -108,20 +117,22 @@ export async function openHistory(by: { conversationId?: string; sessionId?: str
   const sessionId = record?.sdkSessionId ?? by.sessionId;
   if (!sessionId) return record ? { conversationId: record.id, room: record.room, title: record.title, cwd: record.cwd ?? null, items: [], updatedAt: 0 } : null;
 
-  const fakeInfo = FAKE_SESSIONS.find((s) => s.sessionId === sessionId);
+  const fakeCopy = FAKE && sessionId.startsWith(FAKE_COMPACT_PREFIX) ? fakeCompacted(sessionId) : null;
+  const fakeInfo = fakeCopy?.info ?? FAKE_SESSIONS.find((s) => s.sessionId === sessionId);
   const info = FAKE ? fakeInfo : await (await sdk()).getSessionInfo(sessionId);
   if (!info) return record ? { conversationId: record.id, room: record.room, title: record.title, cwd: record.cwd ?? null, items: [], updatedAt: 0 } : null;
 
   if (!record) {
     record = sessions.upsert({ id: randomUUID(), room: "home", title: sessionTitle(info), sdkSessionId: sessionId, cwd: info.cwd });
   }
-  const messages = FAKE ? FAKE_MESSAGES : await (await sdk()).getSessionMessages(sessionId);
+  const messages = FAKE ? (fakeCopy?.messages ?? FAKE_MESSAGES) : await (await sdk()).getSessionMessages(sessionId);
+  const from = record.continuedFrom;
   return {
     conversationId: record.id,
     room: record.room,
     title: record.title,
     cwd: record.cwd ?? info.cwd ?? null,
-    items: historyToItems(messages as never).slice(-MAX_ITEMS),
+    items: historyToItems(messages as never).slice(-MAX_ITEMS).map((it) => (it.kind === "summary" && from ? { ...it, from } : it)),
     updatedAt: info.lastModified,
   };
 }

@@ -14,6 +14,8 @@ export interface SessionRecord {
   team?: string[];
   /** Skills each agent kept on the first turn (skill scout). */
   skills?: Partial<Record<AgentKey, string[]>>;
+  /** "New session": the title of the chat this one was compacted from. */
+  continuedFrom?: string;
   updatedAt: number;
 }
 

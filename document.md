@@ -23,7 +23,7 @@ Start it with `npm run dev`, then open http://127.0.0.1:3217. It only answers on
 | **Plugins** `/plugins` | Connect other AIs (ChatGPT, Gemini, OpenClaw, Hermes, or any OpenAI-compatible server) so Claude can consult them. Also lists your Claude Code plugins and MCP servers with their status. |
 | **History** (dropdown) | Your whole Claude Code history, CLI and app sessions from every project, newest first, labelled by folder. It remembers whether it's open. |
 | **Pinned** | Pin any chat with the pin button on its row (it shows on hover). Pinned chats stay at the top of the sidebar, even when History is collapsed, and survive reloads. Unpin with the same button. |
-| **Settings → Agents** `/settings` | Edit each built-in agent's role prompt and add a goal. Saved to `config/agent-overrides.json`; the text in `docs/spec.md` stays the default, so "Reset to spec" can restore it. |
+| **Settings → Agents** `/settings` | **Token budget** (Economy / **Balanced**, the default / Max quality) sets every agent's model and effort. Per agent: edit the role prompt, add a goal, and pick a **model and effort** ("Recommended" follows the budget; the reason is shown). Saved to `config/agent-overrides.json`; the text in `docs/spec.md` stays the default, so "Reset to defaults" restores it. Why each default: [docs/token-budget.md](docs/token-budget.md). |
 | **Settings → Add agent** `/settings?tab=new` | Make your own agent: name, one-liner, **mascot** (describe it and press **Generate mascot**, press **Randomize costume**, or pick each part: body colour, hat, face, holding, clothes, back), **system prompt**, **goal**, and **background** (pick one, or **Generate background** from the prompt and goal). A live preview shows it on its stage. Saved to `config/custom-agents.json`. Edit or delete it later from the same tab. |
 
 The **sidebar** hides with the sidebar button or **Ctrl+B** and remembers that. On a phone it's a slide-out drawer.
@@ -47,9 +47,11 @@ The **intro** shows once per browser session: Gabo pops in, "GABO" types out, th
 | The Tutor | A study plan that fits your time, active recall, hints before answers, three levels of questions. |
 | The Caveman | Most said, fewest words. In every room. |
 | The Planner | Defines done, orders small steps, riskiest first, one owner per step. |
-| The Emperor | Sharpens the challenge, runs the idea-arena (16 agents `--quick`; the full 100 only after you confirm), crowns one idea. |
+| The Emperor | Sharpens the challenge, runs the idea-arena (8 agents by default, 16 `--quick` if you ask, the full 100 only after you confirm), crowns one idea. |
 
-Every agent follows the **skill rule**: on the first message of a chat it keeps only the skills that fit its role and the task. If a useful skill from vercel-labs/agent-skills isn't installed, a **Skills** card offers **Download / Skip**. Downloads go into the workspace's `.claude/skills/`.
+**Recommended defaults** (Balanced): Opus for the Judge (high effort), Coder and Emperor; Haiku for the Caveman; Sonnet for everyone else. Thinking roles have no shell, edit or MCP tools; each agent has a turn cap and an output length. Every room **triages first** (answer directly, one agent, or the team) and the lead writes the Caveman-style recap itself; the Caveman agent runs when you ask for it. Full table and reasons: [docs/token-budget.md](docs/token-budget.md).
+
+Every agent follows the **skill rule**: on the first message of a chat it keeps only the skills that fit its role and the task (the server's scout applies it; agents get the picks by name and load one only when needed). If a useful skill from vercel-labs/agent-skills isn't installed, a **Skills** card offers **Download / Skip**. Downloads go into the workspace's `.claude/skills/`.
 
 ---
 
@@ -177,9 +179,9 @@ Plain `http://` is only allowed to this machine, so keys never cross the network
 | File | What |
 | --- | --- |
 | `docs/spec.md` | The original request, verbatim. Agent role prompts are read from here. |
-| `config/agent-overrides.json` | Your prompt and goal edits from Settings. Tracked in git. |
+| `config/agent-overrides.json` | Your prompt, goal, model and effort edits from Settings. Tracked in git. |
 | `config/custom-agents.json` | The agents you made (prompt, goal, costume, background). Tracked in git. |
-| `.data/` | Chats, pins, the workspace setting, provider keys, the local-LLM setting, the usage log, the skills cache. Local only, git-ignored. |
+| `.data/` | Chats, pins, the workspace setting, provider keys, the local-LLM setting, the token budget, the usage log, the skills cache. Local only, git-ignored. |
 | `vendor/idea-arena/` | The arena skill (Jakeschincariol/arena-skill, pinned). |
 
 ## Development

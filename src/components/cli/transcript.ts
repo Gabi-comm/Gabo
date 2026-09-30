@@ -11,7 +11,9 @@ export type Item =
   | { kind: "permission"; requestId: string; tool: string; summary: string; decision?: Decision; ask?: AskKind; questions?: Question[]; plan?: string; answers?: Record<string, string> }
   | { kind: "skills"; lines: SkillLine[]; missing: SkillRec[]; note?: string; installed?: string[]; dismissed?: boolean }
   | { kind: "error"; message: string; hint?: string }
-  | { kind: "notice"; text: string };
+  | { kind: "notice"; text: string }
+  /** What a compacted chat carries over (/compact summary). */
+  | { kind: "summary"; from?: string; text: string };
 
 export interface Transcript {
   items: Item[];

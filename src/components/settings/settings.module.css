@@ -62,3 +62,18 @@
 .sections button[aria-selected="true"] { background: var(--raised); color: var(--text); }
 .sectionBody { max-width: 1040px; margin: 0 auto; }
 .panel { min-width: 0; }
+
+.budget { max-width: 1040px; margin: 0 auto 20px; border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 18px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 20px; align-items: center; }
+.budget h2 { font-size: 14px; margin: 0 0 2px; }
+.budget p { margin: 0; }
+.budget .hint { grid-column: 1 / -1; }
+.budgetModes { display: flex; gap: 4px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 3px; }
+.budgetModes button { background: none; border: 0; border-radius: 7px; padding: 5px 12px; color: var(--muted); white-space: nowrap; }
+.budgetModes button[aria-checked="true"] { background: var(--raised); color: var(--text); }
+.pickers { display: flex; flex-wrap: wrap; gap: 12px; }
+.pickers label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
+.pickers select { background: var(--surface); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; font: inherit; min-width: 180px; }
+@media (max-width: 640px) {
+  .budget { grid-template-columns: 1fr; }
+  .budgetModes { overflow-x: auto; }
+}

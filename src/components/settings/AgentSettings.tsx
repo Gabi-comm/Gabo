@@ -14,8 +14,22 @@ interface AgentRow {
   prompt: string;
   goal: string;
   promptEdited: boolean;
+  /** Gab's override; "" = use the recommended default. */
+  model: string;
+  effort: string;
+  recommended: { model: string; effort: string; maxTurns: number; tools: string; words: number; why: string };
   updatedAt: number | null;
 }
+
+type Budget = "economy" | "balanced" | "max";
+const BUDGETS: { id: Budget; label: string; note: string }[] = [
+  { id: "economy", label: "Economy", note: "Haiku for most agents, Sonnet for Judge, Coder and Emperor. Lowest usage." },
+  { id: "balanced", label: "Balanced", note: "Recommended. Sonnet for most, Opus only where the call decides the result." },
+  { id: "max", label: "Max quality", note: "Opus with high effort everywhere. Uses your limits fastest." },
+];
+const MODELS = ["opus", "sonnet", "haiku"];
+const EFFORTS = ["low", "medium", "high"];
+const TOOL_TEXT: Record<string, string> = { think: "no shell, edits or MCP", research: "read and web only", build: "all tools" };
 
 type Status = { kind: "idle" } | { kind: "saving" } | { kind: "saved"; at: number } | { kind: "error"; message: string };
 
@@ -28,6 +42,9 @@ export function AgentSettings({ initialAgent }: { initialAgent?: string }) {
   const [selected, setSelected] = useState<AgentId>(isAgentId(initialAgent) ? initialAgent : "believer");
   const [prompt, setPrompt] = useState("");
   const [goal, setGoal] = useState("");
+  const [model, setModel] = useState("");
+  const [effort, setEffort] = useState("");
+  const [budget, setBudget] = useState<Budget | null>(null);
   const [status, setStatus] = useState<Status>({ kind: "idle" });
 
   const load = useCallback(async () => {
@@ -36,6 +53,8 @@ export function AgentSettings({ initialAgent }: { initialAgent?: string }) {
       const res = await fetch("/api/agents", { cache: "no-store" });
       if (!res.ok) throw new Error(`The server answered ${res.status}.`);
       setRows(await res.json());
+      const b = await fetch("/api/budget", { cache: "no-store" }).then((r) => r.json()).catch(() => null);
+      if (b?.mode) setBudget(b.mode);
     } catch (e) {
       setLoadError(e instanceof Error ? e.message : String(e));
     }
@@ -53,11 +72,13 @@ export function AgentSettings({ initialAgent }: { initialAgent?: string }) {
     if (!row) return;
     setPrompt(row.prompt);
     setGoal(row.goal);
+    setModel(row.model);
+    setEffort(row.effort);
     setStatus({ kind: "idle" });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected, loaded]);
 
-  const dirty = !!current && (prompt !== current.prompt || goal !== current.goal);
+  const dirty = !!current && (prompt !== current.prompt || goal !== current.goal || model !== current.model || effort !== current.effort);
 
   // On a phone the agent list is a horizontal strip; keep the selected one in view.
   useEffect(() => {
@@ -75,6 +96,24 @@ export function AgentSettings({ initialAgent }: { initialAgent?: string }) {
     setRows((rs) => rs?.map((r) => (r.id === row.id ? row : r)) ?? rs);
     setPrompt(row.prompt);
     setGoal(row.goal);
+    setModel(row.model);
+    setEffort(row.effort);
+  }
+
+  async function chooseBudget(mode: Budget) {
+    if (mode === budget) return;
+    const prev = budget;
+    setBudget(mode);
+    try {
+      const res = await fetch("/api/budget", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode }) });
+      if (!res.ok) throw new Error(`The server answered ${res.status}.`);
+      // The recommended model per agent depends on the mode; keep any unsaved edits.
+      const fresh: AgentRow[] = await fetch("/api/agents", { cache: "no-store" }).then((r) => r.json());
+      setRows((rs) => (rs ? rs.map((r) => ({ ...r, recommended: fresh.find((f) => f.id === r.id)?.recommended ?? r.recommended })) : rs));
+    } catch (e) {
+      setBudget(prev);
+      setStatus({ kind: "error", message: e instanceof Error ? e.message : String(e) });
+    }
   }
 
   const save = useCallback(async () => {
@@ -84,7 +123,7 @@ export function AgentSettings({ initialAgent }: { initialAgent?: string }) {
       const res = await fetch("/api/agents", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: current.id, prompt, goal }),
+        body: JSON.stringify({ id: current.id, prompt, goal, model, effort }),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error ?? `The server answered ${res.status}.`);
@@ -93,11 +132,11 @@ export function AgentSettings({ initialAgent }: { initialAgent?: string }) {
     } catch (e) {
       setStatus({ kind: "error", message: e instanceof Error ? e.message : String(e) });
     }
-  }, [current, dirty, goal, prompt, status.kind]);
+  }, [current, dirty, goal, prompt, model, effort, status.kind]);
 
   async function reset() {
     if (!current) return;
-    if (!window.confirm(`Reset ${current.name} to the prompt in docs/spec.md and clear the added goal?`)) return;
+    if (!window.confirm(`Reset ${current.name} to the prompt in docs/spec.md, clear the added goal and use the recommended model and effort?`)) return;
     setStatus({ kind: "saving" });
     try {
       const res = await fetch(`/api/agents?id=${current.id}`, { method: "DELETE" });
@@ -141,13 +180,28 @@ export function AgentSettings({ initialAgent }: { initialAgent?: string }) {
   return (
     <div className={styles.panel}>
       <header className={styles.head}>
-        <p>Each agent&apos;s role prompt and an added goal. Edits save to <code>config/agent-overrides.json</code>; the text in <code>docs/spec.md</code> stays the default. They apply from the next message.</p>
+        <p>Each agent&apos;s role prompt, an added goal, and its model and effort. Edits save to <code>config/agent-overrides.json</code>; the text in <code>docs/spec.md</code> stays the default. They apply from the next message.</p>
       </header>
+
+      <section className={styles.budget} aria-labelledby="budget-title">
+        <div>
+          <h2 id="budget-title">Token budget</h2>
+          <p className={styles.muted}>Sets every agent&apos;s default model and effort, and the room lead&apos;s when the status line says default. Why: <code>docs/token-budget.md</code>.</p>
+        </div>
+        <div role="radiogroup" aria-label="Token budget" className={styles.budgetModes}>
+          {BUDGETS.map((b) => (
+            <button key={b.id} role="radio" aria-checked={budget === b.id} disabled={!budget} onClick={() => chooseBudget(b.id)} title={b.note}>
+              {b.label}
+            </button>
+          ))}
+        </div>
+        <p className={styles.hint}>{BUDGETS.find((b) => b.id === budget)?.note ?? "Loading…"}</p>
+      </section>
 
       <div className={styles.layout}>
         <div className={styles.list} role="tablist" aria-label="Agents" aria-orientation="vertical">
           {(rows ?? []).map((r) => {
-            const edited = r.promptEdited || r.goal !== "";
+            const edited = r.promptEdited || r.goal !== "" || r.model !== "" || r.effort !== "";
             return (
               <button
                 key={r.id}
@@ -194,7 +248,7 @@ export function AgentSettings({ initialAgent }: { initialAgent?: string }) {
                 spellCheck={false}
               />
               <p className={styles.hint}>
-                Always added after this: the skill-scout rule{current.id === "emperor" ? ", the Idea Rubric and how the Emperor uses it" : ""}.
+                Always added after this{current.id === "emperor" ? ": the Idea Rubric and how the Emperor uses it, then" : ":"} the skills the scout picked for the task, and an output budget of about {current.recommended.words} words.
               </p>
 
               <label className={styles.label} htmlFor="added-goal">
@@ -212,12 +266,33 @@ export function AgentSettings({ initialAgent }: { initialAgent?: string }) {
               />
               <p className={styles.hint}>Sent to the agent as “Gab&apos;s added goal for you: …”. Leave empty for none.</p>
 
+              <div className={styles.label}>Model and effort</div>
+              <div className={styles.pickers}>
+                <label>
+                  <span className={styles.muted}>Model</span>
+                  <select value={model} onChange={(e) => setModel(e.target.value)} aria-label="Agent model">
+                    <option value="">Recommended ({current.recommended.model})</option>
+                    {MODELS.map((m) => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                </label>
+                <label>
+                  <span className={styles.muted}>Effort</span>
+                  <select value={effort} onChange={(e) => setEffort(e.target.value)} aria-label="Agent effort">
+                    <option value="">Recommended ({current.recommended.effort})</option>
+                    {EFFORTS.map((m) => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                </label>
+              </div>
+              <p className={styles.hint}>
+                Why: {current.recommended.why} Tools: {TOOL_TEXT[current.recommended.tools] ?? current.recommended.tools} · up to {current.recommended.maxTurns} turns.
+              </p>
+
               <div className={styles.actions}>
                 <button className={styles.primary} onClick={save} disabled={!dirty || status.kind === "saving"}>
                   {status.kind === "saving" ? "Saving…" : "Save"}
                 </button>
-                <button onClick={() => { setPrompt(current.prompt); setGoal(current.goal); }} disabled={!dirty}>Undo changes</button>
-                <button onClick={reset} disabled={!current.promptEdited && current.goal === ""}>Reset to spec</button>
+                <button onClick={() => { setPrompt(current.prompt); setGoal(current.goal); setModel(current.model); setEffort(current.effort); }} disabled={!dirty}>Undo changes</button>
+                <button onClick={reset} disabled={!current.promptEdited && current.goal === "" && current.model === "" && current.effort === ""}>Reset to defaults</button>
                 <span className={styles.status} role="status">
                   {dirty ? "Unsaved changes" : status.kind === "saved" ? `Saved ${new Date(status.at).toLocaleTimeString()}` : ""}
                 </span>

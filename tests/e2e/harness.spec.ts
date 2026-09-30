@@ -217,10 +217,48 @@ test("settings: edit an agent's prompt and goal, it persists, and reset restores
   await expect(page.getByLabel("Role prompt")).toHaveValue("You are a fast judge. Rule in one line.");
   await expect(page.getByRole("tab", { name: /Judge/ })).toContainText("edited");
   page.once("dialog", (d) => d.accept());
-  await page.getByRole("button", { name: "Reset to spec" }).click();
+  await page.getByRole("button", { name: "Reset to defaults" }).click();
   await expect(page.getByLabel("Role prompt")).toHaveValue(/BUILD, FIX FIRST, or KILL/);
   await expect(page.getByLabel("Added goal")).toHaveValue("");
   await expect(page.getByRole("tab", { name: /Judge/ })).not.toContainText("edited");
+});
+
+test("settings: token budget and per-agent model default to the recommendation, and runs use the budget", async ({ page }) => {
+  await page.goto("/settings?agent=caveman");
+  const budget = page.getByRole("radiogroup", { name: "Token budget" });
+  await expect(budget.getByRole("radio", { name: "Balanced" })).toHaveAttribute("aria-checked", "true");
+  const model = page.getByLabel("Agent model");
+  await expect(model).toHaveValue("");
+  await expect(model.locator("option").first()).toHaveText("Recommended (haiku)");
+  await expect(page.getByText(/Why: Compresses text/)).toBeVisible();
+  await page.getByRole("tab", { name: /Judge/ }).click();
+  await expect(page.getByLabel("Agent model").locator("option").first()).toHaveText("Recommended (opus)");
+
+  // Economy moves the Judge's recommendation to Sonnet.
+  await budget.getByRole("radio", { name: "Economy" }).click();
+  await expect(budget.getByRole("radio", { name: "Economy" })).toHaveAttribute("aria-checked", "true");
+  await expect(page.getByLabel("Agent model").locator("option").first()).toHaveText("Recommended (sonnet)");
+
+  // A per-agent pick saves and marks the agent edited; reset clears it.
+  await page.getByLabel("Agent model").selectOption("haiku");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page.getByText(/^Saved/)).toBeVisible();
+  await page.reload();
+  await expect(page.getByLabel("Agent model")).toHaveValue("haiku");
+  await expect(page.getByRole("tab", { name: /Judge/ })).toContainText("edited");
+  page.once("dialog", (d) => d.accept());
+  await page.getByRole("button", { name: "Reset to defaults" }).click();
+  await expect(page.getByLabel("Agent model")).toHaveValue("");
+
+  // The run reports the budget it used.
+  await page.goto("/");
+  await prompt(page).fill("hello budget");
+  await page.keyboard.press("Enter");
+  await expect(page.getByText(/budget economy/)).toBeVisible();
+
+  await page.goto("/settings");
+  await page.getByRole("radiogroup", { name: "Token budget" }).getByRole("radio", { name: "Balanced" }).click();
+  await expect(page.getByRole("radiogroup", { name: "Token budget" }).getByRole("radio", { name: "Balanced" })).toHaveAttribute("aria-checked", "true");
 });
 
 test("Recents lists Claude Code history; opening a CLI session shows its transcript and resumes it", async ({ page }) => {

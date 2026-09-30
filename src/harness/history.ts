@@ -41,6 +41,9 @@ export function cleanUserText(raw: string): string {
     .trim();
 }
 
+/** Claude Code starts a compacted conversation with this user message. */
+const COMPACT_SUMMARY = /^This session is being continued from a previous conversation[^\n]*\n/;
+
 export function historyToItems(messages: HistoryMessage[]): Item[] {
   const items: Item[] = [];
   const toolIndex = new Map<string, number>();
@@ -50,7 +53,9 @@ export function historyToItems(messages: HistoryMessage[]): Item[] {
     if (m.type === "user") {
       for (const b of blocksOf(m.message)) {
         if (b.type === "text") {
-          const text = cleanUserText(String(b.text ?? ""));
+          const raw = String(b.text ?? "");
+          if (COMPACT_SUMMARY.test(raw)) { items.push({ kind: "summary", text: raw.replace(COMPACT_SUMMARY, "").trim() }); continue; }
+          const text = cleanUserText(raw);
           if (text) items.push({ kind: "user", text });
         } else if (b.type === "tool_result") {
           const i = toolIndex.get(String(b.tool_use_id));

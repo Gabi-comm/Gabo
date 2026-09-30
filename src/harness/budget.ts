@@ -24,7 +24,7 @@ export interface AgentProfile {
 export const AGENT_PROFILES: Record<AgentId, AgentProfile> = {
   believer: { model: "sonnet", effort: "medium", maxTurns: 4, tools: "think", words: 250, why: "Builds one argued case from the brief; Sonnet reasons well at a fifth of Opus's cost." },
   skeptic: { model: "sonnet", effort: "medium", maxTurns: 4, tools: "think", words: 250, why: "Attacks the Believer's case; needs sharp reasoning, not tools or files." },
-  investor: { model: "sonnet", effort: "medium", maxTurns: 4, tools: "think", words: 200, why: "Short money-and-demand check with a fixed format; web search allowed, no files." },
+  investor: { model: "sonnet", effort: "medium", maxTurns: 4, tools: "think", words: 200, why: "Short money-and-demand check with a fixed format; web search allowed, no shell or edits." },
   judge: { model: "opus", effort: "high", maxTurns: 3, tools: "think", words: 200, why: "The final BUILD / FIX / KILL call is where quality matters most; one short, deep Opus pass." },
   designer: { model: "sonnet", effort: "medium", maxTurns: 15, tools: "build", words: 350, why: "Needs to read and edit UI files; Sonnet handles design work well." },
   coder: { model: "opus", effort: "medium", maxTurns: 30, tools: "build", words: 300, why: "Code correctness saves re-runs, which cost more than the Opus premium." },
