@@ -12,7 +12,7 @@
 }
 .card h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin: 0 0 12px; }
 
-.tiles { display: grid; grid-template-columns: 1.4fr repeat(4, minmax(0, 1fr)); gap: 10px; margin-bottom: 16px; }
+.tiles { display: grid; grid-template-columns: 1.4fr repeat(5, minmax(0, 1fr)); gap: 10px; margin-bottom: 16px; }
 .tiles > div { display: flex; flex-direction: column; gap: 2px; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; min-width: 0; }
 .tiles strong { font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .hero strong { font-size: 26px; }
@@ -23,10 +23,10 @@
 .legend li { display: inline-flex; align-items: center; gap: 6px; cursor: default; }
 .share { color: var(--muted); font-variant-numeric: tabular-nums; }
 .swatch { width: 10px; height: 10px; border-radius: 3px; flex: none; }
-[data-part="1"] { background: var(--viz-1); }
-[data-part="2"] { background: var(--viz-2); }
-[data-part="3"] { background: var(--viz-3); }
-[data-part="4"] { background: var(--viz-4); }
+.card [data-part="1"] { background: var(--viz-1); }
+.card [data-part="2"] { background: var(--viz-2); }
+.card [data-part="3"] { background: var(--viz-3); }
+.card [data-part="4"] { background: var(--viz-4); }
 
 .chart { display: grid; grid-template-columns: 5ch minmax(0, 1fr); gap: 8px; height: 200px; }
 .yAxis { display: flex; flex-direction: column; justify-content: space-between; align-items: flex-end; font-size: 11px; color: var(--dim); font-variant-numeric: tabular-nums; transform: translateY(-0.5em); height: calc(100% + 1em); }

@@ -676,6 +676,23 @@ test("Status shows usage: plan meters and Gabo's own token log", async ({ page }
   await expect(usage).toContainText("Last 7 days");
 });
 
+test("Status → Analytics: tokens used this week, day by day, with a hover breakdown and a table view", async ({ page }) => {
+  // Earlier tests made fake runs, so this week has data.
+  await page.goto("/status");
+  const analytics = page.getByRole("region", { name: "Analytics" });
+  await expect(analytics).toContainText("Tokens used");
+  await expect(analytics).toContainText("no data for the week before");
+  await expect(analytics.getByRole("list", { name: "Legend" })).toContainText("Cache read");
+  const days = analytics.getByRole("list", { name: "Tokens per day" }).getByRole("listitem");
+  await expect(days).toHaveCount(7);
+  await expect(analytics.getByText("Today", { exact: true })).toBeVisible();
+  await days.last().hover();
+  await expect(analytics.getByRole("status")).toContainText("(today)");
+  await expect(analytics.getByRole("status")).toContainText("Total");
+  await analytics.getByText("Show as a table").click();
+  await expect(analytics.getByRole("table")).toContainText("Fresh input");
+});
+
 // These change the shared connection, so they run last and leave Gabo connected (fake key) for reruns.
 const CLAUDE_FAKE_KEY = "sk-ant-api03-" + "f".repeat(40);
 
