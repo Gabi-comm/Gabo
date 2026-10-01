@@ -104,7 +104,18 @@ describe("events mapper", () => {
     const map = createMapper();
     const [r] = map({ type: "result", subtype: "success", total_cost_usd: 0.02, duration_ms: 900,
       usage: { input_tokens: 10, output_tokens: 5 } } as never);
-    expect(r).toEqual({ type: "result", ok: true, costUsd: 0.02, inputTokens: 10, outputTokens: 5, durationMs: 900 });
+    expect(r).toMatchObject({ type: "result", ok: true, costUsd: 0.02, inputTokens: 10, outputTokens: 5, durationMs: 900 });
+    expect(r).toMatchObject({ turnTokens: { input: 10, output: 5, cacheRead: 0, cacheWrite: 0 } });
+  });
+
+  it("totals every model (subagents included) with cache tokens from modelUsage", () => {
+    const [r] = createMapper()({ type: "result", subtype: "success", total_cost_usd: 1.5, duration_ms: 1,
+      usage: { input_tokens: 6, output_tokens: 2032, cache_read_input_tokens: 780000 },
+      modelUsage: {
+        "claude-opus-5-5": { inputTokens: 6, outputTokens: 2032, cacheReadInputTokens: 780000, cacheCreationInputTokens: 1200 },
+        "claude-haiku-4-5": { inputTokens: 900, outputTokens: 80, cacheReadInputTokens: 0, cacheCreationInputTokens: 0 },
+      } } as never);
+    expect(r).toMatchObject({ tokens: { input: 906, output: 2112, cacheRead: 780000, cacheWrite: 1200, costUsd: 1.5 } });
   });
 
   it("ignores unknown message types", () => {
