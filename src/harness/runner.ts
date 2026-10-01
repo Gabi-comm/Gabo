@@ -67,10 +67,22 @@ export interface BuildOptionsInput {
   local?: LocalLlmConfig;
   /** Economy / Balanced / Max quality: picks every agent's model and effort (docs/token-budget.md). */
   budget?: BudgetMode;
+  /** The connected account's environment (src/server/backend.ts). Omitted: the Claude Code login. */
+  env?: Record<string, string | undefined>;
+  /** Local LLM only: the skills to list and the MCP servers to hide, to keep the prompt small. */
+  localSlim?: LocalSlim;
+  /** Folders besides the workspace the agents may use (e.g. the Obsidian vault). */
+  extraRoots?: string[];
 }
 
+export interface LocalSlim { skills: string[]; blockedMcp: string[] }
+
+/** Built-in tools a local model gets: the essentials, so the prompt fits a small context window. */
+export const LOCAL_TOOLS = ["Read", "Write", "Edit", "Glob", "Grep", "Bash", "Skill", "WebFetch"];
+const LOCAL_NOTE = "You run on a small local model. Keep replies short. Use one agent at a time and only when needed; do not run the idea-arena tournament. Load a skill with the Skill tool only when the task needs it.";
+
 /** Everything a room run passes to query(), minus the live callbacks. */
-export function buildOptions({ room, workspace, spec, sessionId, skillsByAgent = {}, team, customAgents = [], extraWorkflow, overrides = {}, prefs = {}, mcpServers, local, budget = "balanced" }: BuildOptionsInput): Options {
+export function buildOptions({ room, workspace, spec, sessionId, skillsByAgent = {}, team, customAgents = [], extraWorkflow, overrides = {}, prefs = {}, mcpServers, local, budget = "balanced", env: backendEnv, localSlim, extraRoots = [] }: BuildOptionsInput): Options {
   const localOn = isLocalOn(local);
   const lead = leadDefaults(budget);
   const agents: Record<string, AgentDefinition> = {};
@@ -89,10 +101,15 @@ export function buildOptions({ room, workspace, spec, sessionId, skillsByAgent =
       ...(blocked ? { disallowedTools: blocked } : {}),
     };
   }
-  const env: Record<string, string | undefined> = { ...process.env };
-  // Runs on the logged-in Claude subscription; a stray API key would silently switch billing.
-  delete env.ANTHROPIC_API_KEY;
-  if (localOn) Object.assign(env, localEnv(local));
+  let env: Record<string, string | undefined>;
+  if (backendEnv) env = backendEnv;
+  else {
+    env = { ...process.env };
+    // Runs on the logged-in Claude subscription; a stray API key would silently switch billing.
+    delete env.ANTHROPIC_API_KEY;
+    if (localOn) Object.assign(env, localEnv(local));
+  }
+  const slim = localOn ? localSlim ?? { skills: [], blockedMcp: [] } : undefined;
   return {
     cwd: workspace,
     env,
@@ -105,12 +122,18 @@ export function buildOptions({ room, workspace, spec, sessionId, skillsByAgent =
     // settingSources omitted = everything the CLI loads: user, project and local settings, CLAUDE.md, plugins, MCP.
     permissionMode: prefs.mode ?? "default",
     ...(mcpServers && Object.keys(mcpServers).length ? { mcpServers } : {}),
+    ...(extraRoots.length ? { additionalDirectories: extraRoots } : {}),
+    ...(slim ? {
+      tools: room === "home" ? LOCAL_TOOLS : [...LOCAL_TOOLS, "Agent"],
+      skills: slim.skills,
+      ...(slim.blockedMcp.length ? { disallowedTools: slim.blockedMcp } : {}),
+    } : {}),
     model: localOn ? local.model : prefs.model || lead.model,
     effort: prefs.effort || lead.effort,
     systemPrompt: {
       type: "preset",
       preset: "claude_code",
-      append: [workflowFor(room, Object.keys(agents)), extraWorkflow, `The user is Gab. Workspace: ${workspace}`].filter(Boolean).join("\n"),
+      append: [workflowFor(room, Object.keys(agents)), slim ? LOCAL_NOTE : undefined, extraWorkflow, `The user is Gab. Workspace: ${workspace}`].filter(Boolean).join("\n"),
     },
   };
 }
@@ -118,6 +141,7 @@ export function buildOptions({ room, workspace, spec, sessionId, skillsByAgent =
 export interface CanUseToolCtx {
   runId: string;
   workspace: string;
+  extraRoots?: string[];
   broker: PermissionBroker;
   sessionRules: Set<string>;
   onAsk: (req: { requestId: string } & PermissionAsk) => void;
@@ -125,7 +149,7 @@ export interface CanUseToolCtx {
   answers?: Map<string, Record<string, string>>;
 }
 
-export function makeCanUseTool({ runId, workspace, broker, sessionRules, onAsk, answers = pendingAnswers }: CanUseToolCtx): CanUseTool {
+export function makeCanUseTool({ runId, workspace, extraRoots = [], broker, sessionRules, onAsk, answers = pendingAnswers }: CanUseToolCtx): CanUseTool {
   return async (tool, input): Promise<PermissionResult> => {
     // Claude asking Gab something: always shown, never covered by a "yes for this chat" rule.
     if (tool === "AskUserQuestion") {
@@ -148,7 +172,7 @@ export function makeCanUseTool({ runId, workspace, broker, sessionRules, onAsk, 
       const mode = decision === "allow_session" ? "acceptEdits" : "default";
       return { behavior: "allow", updatedInput: input, updatedPermissions: [{ type: "setMode", mode, destination: "session" }] };
     }
-    const blocked = guardToolInput(tool, input, workspace, SKILL_READ_ROOTS);
+    const blocked = guardToolInput(tool, input, workspace, SKILL_READ_ROOTS, extraRoots);
     if (blocked) return { behavior: "deny", message: blocked };
     const rule = sessionRuleKey(tool, input);
     if (sessionRules.has(rule)) return { behavior: "allow", updatedInput: input };
@@ -179,6 +203,10 @@ export interface RunInput {
   local?: LocalLlmConfig;
   /** Economy / Balanced / Max quality (docs/token-budget.md). */
   budget?: BudgetMode;
+  /** The connected account's environment, the Local LLM's slim profile and extra folders. */
+  env?: Record<string, string | undefined>;
+  localSlim?: LocalSlim;
+  extraRoots?: string[];
   /** Gab confirmed a full (more than --quick) arena run. */
   fullArena?: boolean;
   /** Model, permission mode and effort picked in the status line. */
@@ -195,15 +223,15 @@ export interface RunInput {
 }
 
 /** The hard checks every tool call passes through, whatever the permission rules say. */
-export function preToolUseReason(tool: string, toolInput: Record<string, unknown>, workspace: string, fullArena: boolean): string | null {
-  return guardToolInput(tool, toolInput, workspace, SKILL_READ_ROOTS)
+export function preToolUseReason(tool: string, toolInput: Record<string, unknown>, workspace: string, fullArena: boolean, extraRoots: string[] = []): string | null {
+  return guardToolInput(tool, toolInput, workspace, SKILL_READ_ROOTS, extraRoots)
     ?? (tool === "Bash" || tool === "PowerShell" ? arenaSizeGuard(String(toolInput.command ?? ""), fullArena) : null);
 }
 
 const LOGIN_HINT = "Open a terminal, run `claude`, then `/login` with your Pro/Max account.";
 
 export async function runRoom(input: RunInput): Promise<void> {
-  const { runId, conversationId, room, prompt, workspace, sessionId, skillsByAgent, fullArena = false, prefs, images = [], mcpServers, systemNote, team, customAgents = [], local, budget, emit, signal } = input;
+  const { runId, conversationId, room, prompt, workspace, sessionId, skillsByAgent, fullArena = false, prefs, images = [], mcpServers, systemNote, team, customAgents = [], local, budget, env, localSlim, extraRoots = [], emit, signal } = input;
   // Esc can land while setup awaits (skill scout, SDK import, Python check); an abort before the
   // listener below is attached would otherwise be missed and the run would go on unseen.
   const stopped = () => {
@@ -247,15 +275,15 @@ export async function runRoom(input: RunInput): Promise<void> {
     });
 
   const options: Options = {
-    ...buildOptions({ room, workspace, spec, sessionId, skillsByAgent, extraWorkflow: [extraWorkflow, systemNote].filter(Boolean).join("\n") || undefined, overrides: loadOverrides(), prefs, mcpServers, team, customAgents, local, budget }),
+    ...buildOptions({ room, workspace, spec, sessionId, skillsByAgent, extraWorkflow: [extraWorkflow, systemNote].filter(Boolean).join("\n") || undefined, overrides: loadOverrides(), prefs, mcpServers, team, customAgents, local, budget, env, localSlim, extraRoots }),
     abortController,
-    canUseTool: makeCanUseTool({ runId, workspace, broker: defaultBroker, sessionRules, onAsk }),
+    canUseTool: makeCanUseTool({ runId, workspace, extraRoots, broker: defaultBroker, sessionRules, onAsk }),
     hooks: {
       // Reads outside the workspace are auto-allowed by the CLI and never reach canUseTool; lock them here.
       PreToolUse: [{
         hooks: [async (hookInput) => {
           const h = hookInput as { tool_name?: string; tool_input?: Record<string, unknown> };
-          const reason = preToolUseReason(String(h.tool_name), h.tool_input ?? {}, workspace, fullArena);
+          const reason = preToolUseReason(String(h.tool_name), h.tool_input ?? {}, workspace, fullArena, extraRoots);
           return reason
             ? { hookSpecificOutput: { hookEventName: "PreToolUse" as const, permissionDecision: "deny" as const, permissionDecisionReason: reason } }
             : {};

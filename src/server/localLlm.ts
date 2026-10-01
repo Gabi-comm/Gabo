@@ -49,24 +49,78 @@ export async function ollamaStatus(baseUrl: string): Promise<OllamaStatus> {
   }
 }
 
-/** One tiny message through Ollama's Anthropic-compatible API: the same path Claude Code will use. */
-export async function testLocal(c: LocalLlmConfig): Promise<{ ok: boolean; reply?: string; error?: string; ms: number }> {
+export interface LocalTest { ok: boolean; reply?: string; error?: string; ms: number; toolCall: boolean }
+
+/**
+ * One small message through Ollama's Anthropic-compatible API (the path Claude Code uses) that must come
+ * back as a tool call: Gabo's agents need tool calls for skills, files and plugins.
+ */
+export async function testLocal(c: LocalLlmConfig): Promise<LocalTest> {
   const started = Date.now();
-  if (FAKE) return { ok: true, reply: `OK (fake ${c.model})`, ms: 5 };
+  if (FAKE) return { ok: true, reply: `called read_note (fake ${c.model})`, ms: 5, toolCall: true };
   try {
     const res = await fetch(`${c.baseUrl}/v1/messages`, {
       method: "POST",
-      signal: AbortSignal.timeout(180_000),
+      signal: AbortSignal.timeout(240_000),
       headers: { "Content-Type": "application/json", "x-api-key": "ollama", "anthropic-version": "2023-06-01" },
-      body: JSON.stringify({ model: c.model, max_tokens: 20, messages: [{ role: "user", content: "Reply with exactly: OK" }] }),
+      body: JSON.stringify({
+        model: c.model, max_tokens: 300,
+        tools: [{ name: "read_note", description: "Read a note by its title.", input_schema: { type: "object", properties: { title: { type: "string" } }, required: ["title"] } }],
+        messages: [{ role: "user", content: "Use the read_note tool to read the note titled \"Groceries\". Do not answer in text." }],
+      }),
     });
     const body = await res.json().catch(() => ({}));
-    if (!res.ok) return { ok: false, error: body?.error?.message ?? `HTTP ${res.status}`, ms: Date.now() - started };
-    const reply = ((body?.content ?? []) as { type: string; text?: string }[]).map((b) => b.text ?? "").join("").trim();
-    return { ok: true, reply: reply || "(empty reply)", ms: Date.now() - started };
+    if (!res.ok) return { ok: false, error: body?.error?.message ?? `HTTP ${res.status}`, ms: Date.now() - started, toolCall: false };
+    const blocks = (body?.content ?? []) as { type: string; text?: string; name?: string; input?: Record<string, unknown> }[];
+    const call = blocks.find((b) => b.type === "tool_use");
+    const text = blocks.map((b) => b.text ?? "").join("").trim();
+    return call
+      ? { ok: true, reply: `called ${call.name}(${JSON.stringify(call.input ?? {})})`, ms: Date.now() - started, toolCall: true }
+      : { ok: true, reply: text ? `answered in text instead of calling the tool: "${text.slice(0, 120)}"` : "(empty reply)", ms: Date.now() - started, toolCall: false };
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : String(err), ms: Date.now() - started };
+    return { ok: false, error: err instanceof Error ? err.message : String(err), ms: Date.now() - started, toolCall: false };
   }
+}
+
+export interface ModelDetails {
+  /** num_ctx the model runs with; null = Ollama's default (small: about 4k). */
+  contextWindow: number | null;
+  /** The most the model supports. */
+  maxContext: number | null;
+  tools: boolean;
+  capabilities: string[];
+}
+
+/** Context window and tool support, from `ollama show` (instant: no generation). */
+export async function modelDetails(baseUrl: string, model: string): Promise<ModelDetails> {
+  if (FAKE) return { contextWindow: model.includes("gabo") ? 32768 : null, maxContext: 40960, tools: true, capabilities: ["completion", "tools"] };
+  const res = await fetch(`${baseUrl}/api/show`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model }), signal: AbortSignal.timeout(10_000) });
+  if (!res.ok) throw new Error(`Ollama answered ${res.status} for ${model}.`);
+  const d = (await res.json()) as { capabilities?: string[]; parameters?: string; model_info?: Record<string, unknown> };
+  const num = /(?:^|\n)\s*num_ctx\s+(\d+)/.exec(d.parameters ?? "");
+  const maxKey = Object.keys(d.model_info ?? {}).find((k) => k.endsWith(".context_length"));
+  const caps = d.capabilities ?? [];
+  return { contextWindow: num ? Number(num[1]) : null, maxContext: maxKey ? Number(d.model_info![maxKey]) : null, tools: caps.includes("tools"), capabilities: caps };
+}
+
+/** The name Gabo gives a model copy with a bigger context window, e.g. qwen3:8b -> qwen3-8b-gabo-32k. */
+export function preparedName(model: string, numCtx: number): string {
+  const base = model.replace(/:latest$/, "").replace(/-gabo-\d+k$/, "").replace(/[:/]/g, "-");
+  return `${base}-gabo-${Math.round(numCtx / 1024)}k`;
+}
+
+/** `ollama create` a copy of the model with num_ctx set, so Claude Code's long prompt isn't cut off. */
+export async function prepareModel(baseUrl: string, model: string, numCtx: number): Promise<string> {
+  const name = preparedName(model, numCtx);
+  if (FAKE) return name;
+  const res = await fetch(`${baseUrl}/api/create`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ model: name, from: model, parameters: { num_ctx: numCtx }, stream: false }),
+    signal: AbortSignal.timeout(120_000),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok || body?.error) throw new Error(body?.error ?? `Ollama answered ${res.status}.`);
+  return name;
 }
 
 /** Starts `ollama pull` through the API and returns its newline-delimited JSON progress. */

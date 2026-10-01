@@ -1,8 +1,14 @@
-/** One tool-less Haiku turn on Gab's plan for small bookkeeping jobs. Never saved to his session history. */
+import { activeBackend } from "./backend";
+
+/**
+ * One tool-less turn on the fast model of the connected account (Haiku on Claude, the fast tier on
+ * OpenAI/Gemini, the local model when the Local LLM is on) for small bookkeeping jobs. Never saved to history.
+ */
 export async function askHaiku(prompt: string, timeoutMs = 45_000): Promise<string> {
   const { query } = await import("@anthropic-ai/claude-agent-sdk");
-  const env: Record<string, string | undefined> = { ...process.env };
-  delete env.ANTHROPIC_API_KEY;
+  const active = activeBackend();
+  if (active.problem) throw new Error(active.problem);
+  const env = active.env;
   const abortController = new AbortController();
   const timer = setTimeout(() => abortController.abort(), timeoutMs);
   let text = "";

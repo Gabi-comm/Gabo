@@ -8,6 +8,8 @@ import { SKILL_READ_ROOTS } from "@/harness/runner";
 import { fetchCatalog, listLocal, type CatalogSkill } from "@/harness/skills/catalog";
 import { workspaceSkillsDir } from "@/harness/skills/install";
 import { buildScoutPrompt, computeMissing, parseScoutReply, type PoolSkill } from "@/harness/skills/scout";
+import { keywordScout } from "@/harness/skills/keywords";
+import { activeBackend } from "./backend";
 import { DATA_DIR, sessions } from "./config";
 
 export const CATALOG_CACHE = path.join(DATA_DIR, "skills-catalog.json");
@@ -23,6 +25,8 @@ export interface PrepareSkillsInput {
   signal?: AbortSignal;
   team?: string[];
   customAgents?: CustomAgent[];
+  /** Local LLM: pick by keyword match from installed skills, with no model call and no network. */
+  offline?: boolean;
 }
 
 type SkillMap = Partial<Record<AgentKey, string[]>>;
@@ -34,8 +38,9 @@ function onlyInstalled(map: SkillMap, installed: Set<string>): SkillMap {
 /** One cheap, tool-less Haiku turn on the subscription that returns the scout's JSON. */
 async function askScout(prompt: string, cwd: string, signal?: AbortSignal): Promise<string> {
   const { query } = await import("@anthropic-ai/claude-agent-sdk");
-  const env: Record<string, string | undefined> = { ...process.env };
-  delete env.ANTHROPIC_API_KEY;
+  const active = activeBackend();
+  if (active.problem) throw new Error(active.problem);
+  const env = active.env;
   const abortController = new AbortController();
   const timer = setTimeout(() => abortController.abort(), SCOUT_TIMEOUT_MS);
   const onAbort = () => abortController.abort();
@@ -65,13 +70,20 @@ async function askScout(prompt: string, cwd: string, signal?: AbortSignal): Prom
  * The skill-scout rule from the spec: before the first task of a chat, each pulled agent keeps only the
  * skills that fit its role and the task. Later turns reuse the pick (plus anything downloaded since).
  */
-export async function prepareSkills({ conversationId, room, prompt, workspace, firstTurn, emit, signal, team, customAgents = [] }: PrepareSkillsInput): Promise<SkillMap> {
+export async function prepareSkills({ conversationId, room, prompt, workspace, firstTurn, emit, signal, team, customAgents = [], offline = false }: PrepareSkillsInput): Promise<SkillMap> {
   const local = listLocal([...SKILL_READ_ROOTS, workspaceSkillsDir(workspace)]);
   const installed = new Set(local.map((s) => s.name));
   const saved = sessions.get(conversationId)?.skills;
   if (!firstTurn && saved) return onlyInstalled(saved, installed);
 
   const roster = rosterFor(room, team);
+  if (offline) {
+    const lines = keywordScout(prompt, roster, local.map((l) => ({ name: l.name, description: l.description, installed: true })));
+    emit({ type: "skills", lines, missing: [], note: "Local LLM: skills picked by keyword match from installed skills (no Claude call)." });
+    const picked: SkillMap = Object.fromEntries(lines.map((l) => [l.agent, l.skills]));
+    sessions.upsert({ id: conversationId, skills: picked });
+    return onlyInstalled(picked, installed);
+  }
   let catalog: CatalogSkill[] = [];
   let note: string | undefined;
   try {

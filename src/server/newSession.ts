@@ -1,9 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { isLocalOn, localEnv } from "@/harness/localLlm";
 import { roomHref } from "@/lib/routes";
 import { FAKE, getWorkspace, sessions } from "./config";
 import type { SessionRecord } from "./sessions";
-import { loadLocal } from "./localLlm";
+import { activeBackend } from "./backend";
 
 export interface NewSessionResult { conversationId: string; href: string; title: string }
 
@@ -45,7 +44,8 @@ async function forkAndCompact(record: SessionRecord, signal?: AbortSignal): Prom
   const { deleteSession, forkSession, query } = await import("@anthropic-ai/claude-agent-sdk");
   const cwd = record.cwd ?? getWorkspace();
   const { sessionId } = await forkSession(record.sdkSessionId!, { title: continuedTitle(record.title) });
-  const local = loadLocal();
+  const active = activeBackend();
+  if (active.problem) throw new NewSessionError(active.problem, 400);
   const abortController = new AbortController();
   const onAbort = () => abortController.abort();
   signal?.addEventListener("abort", onAbort);
@@ -56,7 +56,7 @@ async function forkAndCompact(record: SessionRecord, signal?: AbortSignal): Prom
         cwd,
         resume: sessionId,
         abortController,
-        ...(isLocalOn(local) ? { model: local.model, env: { ...process.env, ...localEnv(local) } } : {}),
+        env: active.env,
       },
     });
     let compacted = false;

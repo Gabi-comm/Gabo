@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { parsePlanUsage, summarizeUsage, type PlanUsage, type UsageRecord } from "@/harness/usage";
 import { DATA_DIR, FAKE } from "./config";
+import { activeBackend } from "./backend";
 
 export const USAGE_FILE = path.join(DATA_DIR, "usage.jsonl");
 const LIMITS_FILE = path.join(DATA_DIR, "rate-limits.json");
@@ -79,6 +80,7 @@ export function planUsage(refresh = false): Promise<Plan> {
     const text = "Current session: 42% used · resets 10:00pm\nCurrent week (all models): 17% used · resets Oct 1";
     return Promise.resolve({ text, meters: parsePlanUsage(text) });
   }
+  if (activeBackend().kind !== "claude-login") return Promise.resolve(null);
   if (!refresh && g.__gaboPlan && Date.now() - g.__gaboPlan.at < PLAN_TTL) return g.__gaboPlan.value;
   const value = readPlan();
   g.__gaboPlan = { at: Date.now(), value };

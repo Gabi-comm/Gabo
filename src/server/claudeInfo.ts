@@ -66,8 +66,8 @@ function enabledPlugins(): ClaudeInfo["plugins"] {
  */
 async function read(): Promise<ClaudeInfo> {
   const { query } = await import("@anthropic-ai/claude-agent-sdk");
-  const env: Record<string, string | undefined> = { ...process.env };
-  delete env.ANTHROPIC_API_KEY;
+  const { activeBackend } = await import("./backend");
+  const env = activeBackend().env;
   const abortController = new AbortController();
   async function* idle() {
     await new Promise((resolve) => abortController.signal.addEventListener("abort", resolve));

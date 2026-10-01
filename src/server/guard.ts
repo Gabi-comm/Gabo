@@ -1,3 +1,5 @@
+import { rememberHost } from "./backend";
+
 const LOCAL_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]"]);
 
 function split(host: string): [name: string, port: string] {
@@ -12,6 +14,7 @@ function split(host: string): [name: string, port: string] {
 export function rejectForeign(req: Request): Response | null {
   const [hostName, hostPort] = split(req.headers.get("host") ?? "");
   if (!LOCAL_HOSTS.has(hostName)) return new Response("Forbidden host", { status: 403 });
+  rememberHost(`${hostName}:${hostPort}`);
   const origin = req.headers.get("origin");
   if (!origin) return null;
   try {

@@ -15,7 +15,8 @@ const TAGLINE_AT = TYPE_START + WORD.length * TYPE_STEP + 120;
 const LEAVE_AT = TAGLINE_AT + 1300;
 const GONE_AFTER = 420;
 
-export function IntroSplash() {
+/** onDone: the intro finished, was skipped, or was already seen this session. */
+export function IntroSplash({ onDone }: { onDone?: () => void }) {
   const [phase, setPhase] = useState<"hidden" | "show" | "leaving">("show");
   const [typed, setTyped] = useState(0);
   const [tagline, setTagline] = useState(false);
@@ -50,6 +51,8 @@ export function IntroSplash() {
     const t = setTimeout(() => setPhase("hidden"), GONE_AFTER);
     return () => clearTimeout(t);
   }, [phase]);
+
+  useEffect(() => { if (phase === "hidden") onDone?.(); }, [phase, onDone]);
 
   if (phase === "hidden") return null;
   return (

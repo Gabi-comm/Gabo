@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { Sidebar } from "./Sidebar";
 import { Icon } from "./Icon";
 import { IntroSplash } from "./IntroSplash";
+import { ConnectGate } from "@/components/connect/ConnectGate";
 import styles from "./shell.module.css";
 
 const COLLAPSED_KEY = "gabo:sidebar-collapsed";
@@ -15,6 +16,8 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const pathname = usePathname();
+  const [introDone, setIntroDone] = useState(false);
+  const finishIntro = useCallback(() => setIntroDone(true), []);
 
   useEffect(() => {
     try { setCollapsed(localStorage.getItem(COLLAPSED_KEY) === "1"); } catch { /* storage blocked */ }
@@ -52,7 +55,8 @@ export function Shell({ children }: { children: React.ReactNode }) {
       <div className={styles.scrim} onClick={() => setOpen(false)} aria-hidden="true" />
       <Sidebar onClose={hide} />
       <main className={styles.main}>{children}</main>
-      <IntroSplash />
+      <IntroSplash onDone={finishIntro} />
+      <ConnectGate ready={introDone} />
     </div>
   );
 }

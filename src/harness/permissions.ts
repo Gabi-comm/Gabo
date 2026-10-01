@@ -101,6 +101,8 @@ export function guardToolInput(
   input: Record<string, unknown>,
   workspace: string,
   readRoots: string[] = [],
+  /** Extra folders Gab connected (e.g. his Obsidian vault): read and write, like the workspace. */
+  extraRoots: string[] = [],
 ): string | null {
   const readOnly = tool === "Read" || tool === "Glob" || tool === "Grep";
   const candidates: string[] = [];
@@ -116,6 +118,7 @@ export function guardToolInput(
   for (const v of candidates) {
     const abs = realPath(path.resolve(workspace, v));
     if (isInside(realWorkspace, abs)) continue;
+    if (extraRoots.some((r) => isInside(realPath(r), abs))) continue;
     if (readOnly && readRoots.some((r) => isInside(realPath(r), abs))) continue;
     return `${tool} blocked: ${abs} is outside the workspace ${workspace}`;
   }

@@ -15,6 +15,10 @@ import { loadBudget } from "@/server/budget";
 import { appendUsage, recordRateLimit } from "@/server/usageLog";
 import { FAKE, getWorkspace, sessions, validateWorkspace } from "@/server/config";
 import { prepareSkills } from "@/server/skills";
+import { activeBackend } from "@/server/backend";
+import { loadConnectors } from "@/server/connectors";
+import { getClaudeInfo } from "@/server/claudeInfo";
+import { blockedServers, connectorNote, connectorRoots, connectorServers } from "@/harness/connectors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -37,6 +41,8 @@ export async function POST(req: Request) {
   const customAgents = loadCustomAgents();
   const local = loadLocal();
   const budget = loadBudget();
+  const backend = activeBackend();
+  if (backend.problem) return Response.json({ error: backend.problem }, { status: 409 });
   if (room.startsWith("agent:x-") && !customAgents.some((a) => `agent:${a.id}` === room)) {
     return Response.json({ error: "That agent was deleted." }, { status: 404 });
   }
@@ -96,11 +102,23 @@ export async function POST(req: Request) {
           const workspace = own?.ok ? own.path : getWorkspace();
           // Other AIs from the Plugins page, as tools Claude can call (each call still asks Gab).
           const ais = usableProviders(loadProviders());
-          const skillsByAgent = await prepareSkills({ conversationId, room, prompt, workspace, firstTurn: !existing?.sdkSessionId, emit, signal: abort.signal, team, customAgents });
+          const localOn = backend.kind === "local";
+          const skillsByAgent = await prepareSkills({ conversationId, room, prompt, workspace, firstTurn: !existing?.sdkSessionId, emit, signal: abort.signal, team, customAgents, offline: localOn });
+          // Plugins connected on the Local LLM page: Gabo starts them itself, so they work on any account.
+          const connectors = loadConnectors();
+          const servers = { ...connectorServers(connectors), ...(ais.length ? { [AI_SERVER]: buildAiServer(ais) } : {}) };
+          const notes = [ais.length ? aiSystemNote(ais) : undefined, connectorNote(connectors)].filter(Boolean).join("\n");
+          // Local LLM: only the picked skills and the allowed MCP servers reach the model (docs/plan-local-llm-tools.md).
+          const localSlim = localOn ? {
+            skills: [...new Set([...Object.values(skillsByAgent).flat().filter((x): x is string => !!x), ...connectors.pinnedSkills])],
+            blockedMcp: blockedServers(connectors, (await getClaudeInfo().catch(() => null))?.mcp.map((m) => m.name) ?? []),
+          } : undefined;
           await runRoom({
             runId, conversationId, room, prompt, workspace, emit, signal: abort.signal,
             sessionId: record.sdkSessionId, skillsByAgent, fullArena: body.full === true, prefs: parseRunPrefs(body.prefs), images, team, customAgents, local, budget,
-            ...(ais.length ? { mcpServers: { [AI_SERVER]: buildAiServer(ais) }, systemNote: aiSystemNote(ais) } : {}),
+            env: backend.env, localSlim, extraRoots: connectorRoots(connectors),
+            ...(Object.keys(servers).length ? { mcpServers: servers } : {}),
+            ...(notes ? { systemNote: notes } : {}),
           });
         }
       } catch (err) {

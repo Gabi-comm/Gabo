@@ -100,3 +100,22 @@ describe("room workflows", () => {
     expect(w).toMatch(/--agents 8/);
   });
 });
+
+describe("Local LLM slim profile", () => {
+  const local = { enabled: true, baseUrl: "http://127.0.0.1:11434", model: "qwen3-8b-gabo-32k" };
+  it("gives the local model only the essential tools, the picked skills and the allowed plugins", () => {
+    const o = buildOptions({ room: "library", workspace: path.resolve("/w"), spec, local, localSlim: { skills: ["unslop"], blockedMcp: ["mcp__plugin_supabase_supabase"] } });
+    expect(o.tools).toEqual(["Read", "Write", "Edit", "Glob", "Grep", "Bash", "Skill", "WebFetch", "Agent"]);
+    expect(o.skills).toEqual(["unslop"]);
+    expect(o.disallowedTools).toEqual(["mcp__plugin_supabase_supabase"]);
+    expect((o.systemPrompt as { append: string }).append).toMatch(/small local model/);
+    expect(buildOptions({ room: "home", workspace: path.resolve("/w"), spec, local }).tools).not.toContain("Agent");
+  });
+  it("leaves everything as is on an AI account, and passes connected folders and the account env", () => {
+    const o = buildOptions({ room: "home", workspace: path.resolve("/w"), spec, env: { ANTHROPIC_API_KEY: "k" }, extraRoots: ["C:/Vault"] });
+    expect(o.tools).toBeUndefined();
+    expect(o.skills).toBeUndefined();
+    expect(o.env).toEqual({ ANTHROPIC_API_KEY: "k" });
+    expect(o.additionalDirectories).toEqual(["C:/Vault"]);
+  });
+});

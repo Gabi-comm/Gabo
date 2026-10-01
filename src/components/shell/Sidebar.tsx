@@ -157,6 +157,11 @@ export function Sidebar({ onClose }: { onClose: () => void }) {
           </Link>
         </li>
         <li>
+          <Link href="/connect" className={styles.navItem} aria-current={pathname === "/connect" ? "page" : undefined}>
+            <Icon name="key" /> Connect AI
+          </Link>
+        </li>
+        <li>
           <Link href="/local-llm" className={styles.navItem} aria-current={pathname === "/local-llm" ? "page" : undefined}>
             <Icon name="chip" /> Local LLM
           </Link>
