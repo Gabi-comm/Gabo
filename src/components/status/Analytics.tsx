@@ -39,7 +39,7 @@ function niceMax(v: number): number {
   return [1, 2, 2.5, 5, 10].map((m) => m * p).find((m) => m >= v)!;
 }
 
-export function Analytics({ a }: { a: WeeklyAnalytics }) {
+export function Analytics({ a, billing }: { a: WeeklyAnalytics; billing?: string }) {
   const [hover, setHover] = useState<number | null>(null);
   const max = niceMax(Math.max(...a.days.map((d) => d.total)));
   const ticks = [max, max / 2, 0];
@@ -65,7 +65,7 @@ export function Analytics({ a }: { a: WeeklyAnalytics }) {
           <strong>{a.speed ? `${a.speed.doneS}s` : "—"}</strong>
           <span className={styles.tileNote}>{a.speed ? `first words after ${a.speed.firstWordsS}s (avg of ${a.speed.runs})` : "logged from now on"}</span>
         </div>
-        <div><span className={styles.tileLabel}>API-equivalent</span><strong>${a.costUsd.toFixed(2)}</strong><span className={styles.tileNote}>on a plan, not billed per token</span></div>
+        <div title={billing}><span className={styles.tileLabel}>At API prices</span><strong>≈${a.costUsd.toFixed(2)}</strong><span className={styles.tileNote}>{billing?.startsWith("Not charged") ? "estimate only, not charged on your plan" : billing?.startsWith("Billed") ? "billed to your API key" : billing?.startsWith("Free") ? "free, local model" : "estimate"}</span></div>
       </div>
 
       {a.total === 0 ? (
@@ -122,7 +122,7 @@ export function Analytics({ a }: { a: WeeklyAnalytics }) {
                     </div>
                   ))}
                   <div className={styles.tipTotal}><span>Total</span><span>{full(shown.total)}</span></div>
-                  <div className={styles.tipMuted}>{shown.runs} run{shown.runs === 1 ? "" : "s"} · ${shown.costUsd.toFixed(2)} API-equiv.</div>
+                  <div className={styles.tipMuted}>{shown.runs} run{shown.runs === 1 ? "" : "s"} · ≈${shown.costUsd.toFixed(2)} at API prices</div>
                 </div>
               )}
             </div>

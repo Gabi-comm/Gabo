@@ -26,6 +26,14 @@ interface Status {
 
 interface Totals { runs: number; tokens: number; costUsd: number }
 
+/** What the dollar figures mean for the connected account: an estimate on a plan, a real bill on an API key. */
+function billingNote(kind: Status["backend"]["kind"]): string {
+  if (kind === "subscription") return "Not charged: you're on your Claude Code subscription. Tokens count toward your plan's usage limits; the $ is only what they'd cost on the API.";
+  if (kind === "key") return "Billed per token by your AI provider, to the API key you connected.";
+  if (kind === "local") return "Free: the local model runs on this computer.";
+  return "Not connected.";
+}
+
 const fmtTokens = (n: number) => (n >= 1_000_000 ? `${(n / 1_000_000).toFixed(2)}M` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n));
 const LIMIT_LABEL: Record<string, string> = {
   five_hour: "5-hour window", seven_day: "7-day window", seven_day_opus: "7-day (Opus)", seven_day_sonnet: "7-day (Sonnet)", overage: "Extra usage",
@@ -136,7 +144,7 @@ export function StatusPage() {
             </dl>
           </section>
 
-          {status.usage.analytics && <Analytics a={status.usage.analytics} />}
+          {status.usage.analytics && <Analytics a={status.usage.analytics} billing={billingNote(status.backend.kind)} />}
 
           <section className={`${styles.card} ${styles.wide}`} aria-label="Usage">
             <h2>Usage</h2>
@@ -158,8 +166,9 @@ export function StatusPage() {
               <div>
                 <h3>In Gabo</h3>
                 <dl>
-                  <Row label="Today">{status.usage.summary.today.runs} runs · {fmtTokens(status.usage.summary.today.tokens)} tokens · ${status.usage.summary.today.costUsd.toFixed(2)} API-equiv.</Row>
-                  <Row label="Last 7 days">{status.usage.summary.week.runs} runs · {fmtTokens(status.usage.summary.week.tokens)} tokens · ${status.usage.summary.week.costUsd.toFixed(2)} API-equiv.</Row>
+                  <Row label="Today">{status.usage.summary.today.runs} runs · {fmtTokens(status.usage.summary.today.tokens)} tokens · ≈${status.usage.summary.today.costUsd.toFixed(2)} at API prices</Row>
+                  <Row label="Last 7 days">{status.usage.summary.week.runs} runs · {fmtTokens(status.usage.summary.week.tokens)} tokens · ≈${status.usage.summary.week.costUsd.toFixed(2)} at API prices</Row>
+                  <Row label="Billing">{billingNote(status.backend.kind)}</Row>
                 </dl>
                 {status.usage.summary.byRoom.length > 0 && (
                   <table className={styles.table}>
