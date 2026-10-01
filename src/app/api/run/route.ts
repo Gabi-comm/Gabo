@@ -16,6 +16,7 @@ import { FAKE, getWorkspace, sessions, validateWorkspace } from "@/server/config
 import { prepareSkills } from "@/server/skills";
 import { makeHeaderFilter } from "@/harness/localFilter";
 import { routePrompt, tierTag } from "@/harness/router";
+import { recordOverride, roomBias } from "@/server/routerFeedback";
 import { makePersonaSplitter } from "@/harness/personaSplit";
 import { isRoomId, isTeamRoom, rosterFor } from "@/harness/rooms";
 import { AGENTS, isAgentId } from "@/harness/agents";
@@ -60,7 +61,9 @@ export async function POST(req: Request) {
 
   // Workspace rooms on a strong model: pick how much team the prompt needs (docs/plan-faster-replies.md §1).
   // Local models can't write several roles well, so they keep real agents one at a time.
-  const route = isTeamRoom(room) && backend.kind !== "local" ? routePrompt(prompt, room, images.length) : null;
+  const route = isTeamRoom(room) && backend.kind !== "local" ? routePrompt(prompt, room, images.length, roomBias(room)) : null;
+  // --deep / --lite (and "Redo with real agents") are corrections: the router leans with them next time.
+  if (route && /(^|\s)--(deep|lite)\b/i.test(prompt)) recordOverride(room, route.tier === "deep" ? "deep" : "lite");
   // The tier rides on the message (after the cached prefix), not in the system prompt.
   const runPrompt = route ? `${tierTag(route.tier)} ${route.prompt}` : prompt;
 
@@ -117,7 +120,7 @@ export async function POST(req: Request) {
       };
       try {
         if (route && route.tier !== "deep") {
-          emit({ type: "notice", text: `${route.tier === "quick" ? "Quick" : "Standard"} reply (${route.reason}): the team answers together in one reply to save tokens. Add --deep for separate agents.` });
+          emit({ type: "tier", tier: route.tier, reason: route.reason, prompt: route.prompt });
         }
         if (FAKE) {
           await fakeRun({

@@ -52,13 +52,24 @@ test("Workspace rooms: a short question gets a Quick team reply in one answer, s
   await page.goto("/library");
   await prompt(page).fill("what is a binary search?");
   await page.keyboard.press("Enter");
-  await expect(page.getByText(/Quick reply \(short question\): the team answers together in one reply/)).toBeVisible();
+  await expect(page.getByText(/Quick reply \(short question.*the team answers together in one reply/)).toBeVisible();
   await expect(page.getByText("Done. Fake run finished.")).toBeVisible({ timeout: 20_000 });
   await expect(page.getByText("The Researcher opens.")).toBeVisible();
   await expect(page.getByText("The Tutor answers and builds on it.")).toBeVisible();
   await expect(page.getByTitle("Builds on what these teammates said")).toHaveCount(1);
   await expect(page.getByTitle("Builds on what these teammates said")).toContainText("← Researcher");
   await expect(page.getByText("### researcher")).toHaveCount(0);
+});
+
+test("a Quick team reply can be redone with real agents in one click", async ({ page }) => {
+  await page.goto("/library");
+  await prompt(page).fill("what is a stack?");
+  await page.keyboard.press("Enter");
+  await expect(page.getByText("Done. Fake run finished.")).toBeVisible({ timeout: 20_000 });
+  await page.getByRole("button", { name: "Redo with real agents" }).click();
+  await expect(page.getByText("what is a stack? --deep")).toBeVisible();
+  // Real agents report in their own blocks (the fake Deep run).
+  await expect(page.getByText("The Researcher reporting.")).toBeVisible({ timeout: 20_000 });
 });
 
 test("Esc interrupts a running run", async ({ page }) => {

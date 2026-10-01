@@ -25,6 +25,8 @@ export type UiEvent =
   | { type: "result"; ok: boolean; costUsd: number; inputTokens: number; outputTokens: number; durationMs: number; tokens?: TokenCounts; turnTokens?: TokenCounts; contextTokens?: number }
   | { type: "error"; message: string; hint?: string }
   | { type: "notice"; text: string }
+  /** The router's pick for this message, with the prompt so the UI can redo it with real agents. */
+  | { type: "tier"; tier: "quick" | "standard" | "deep"; reason: string; prompt: string }
   | { type: "rate_limit"; info: Record<string, unknown> }
   | { type: "mode"; mode: string }
   | { type: "done" };

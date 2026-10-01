@@ -211,7 +211,7 @@ export function AgentSettings({ initialAgent }: { initialAgent?: string }) {
             }}
           />
           Run my Claude Code hooks in Gabo
-          <span className={styles.muted}>Off is faster and uses fewer tokens: your plugins&apos; hooks added about 4–5 s to every session start and inject extra text into every chat. Gabo&apos;s own safety checks run either way.</span>
+          <span className={styles.muted}>On by default, so plugins like remember and superpowers work in Gabo. Turning it off makes each chat start about 4–5 s faster and saves the text the hooks add. Gabo&apos;s own safety checks run either way.</span>
         </label>
       </section>
 

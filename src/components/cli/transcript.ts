@@ -12,6 +12,7 @@ export type Item =
   | { kind: "skills"; lines: SkillLine[]; missing: SkillRec[]; note?: string; installed?: string[]; dismissed?: boolean }
   | { kind: "error"; message: string; hint?: string }
   | { kind: "notice"; text: string }
+  | { kind: "tier"; tier: "quick" | "standard" | "deep"; reason: string; prompt: string }
   /** What a compacted chat carries over (/compact summary). */
   | { kind: "summary"; from?: string; text: string };
 
@@ -64,6 +65,8 @@ export function reduce(t: Transcript, a: Action): Transcript {
       return { ...t, running: true, items: [...t.items, { kind: "user", text: a.text, ...(a.images ? { images: a.images } : {}) }] };
     case "notice":
       return { ...t, items: [...t.items, { kind: "notice", text: a.text }] };
+    case "tier":
+      return { ...t, items: [...t.items, { kind: "tier", tier: a.tier, reason: a.reason, prompt: a.prompt }] };
     case "clear":
       return { ...initialTranscript, model: t.model, cwd: t.cwd };
     case "hydrate":

@@ -63,10 +63,13 @@ export function routePrompt(raw: string, room: RoomId, images = 0, bias: RouterB
   return { tier: "quick", reason, prompt };
 }
 
-/** A room's lean from Gab's corrections: each --deep (or "Redo with real agents") +0.5, each --lite -0.5, capped. */
+/**
+ * A room's lean from Gab's corrections: each --deep (or "Redo with real agents") +0.75, each --lite -0.75, capped
+ * at ±3, so about four corrections in a room are enough to move even a plain short question up a tier.
+ */
 export function biasFrom(counts: { deep?: number; lite?: number } | undefined): RouterBias {
   if (!counts) return 0;
-  return Math.max(-2, Math.min(2, ((counts.deep ?? 0) - (counts.lite ?? 0)) * 0.5));
+  return Math.max(-3, Math.min(3, ((counts.deep ?? 0) - (counts.lite ?? 0)) * 0.75));
 }
 
 const strip = (p: string, flag: string) => p.replace(new RegExp(`(^|\\s)--${flag}\\b`, "gi"), " ").replace(/\s+/g, " ").trim();

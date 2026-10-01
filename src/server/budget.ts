@@ -27,11 +27,11 @@ export function saveBudget(mode: BudgetMode, file = BUDGET_FILE): BudgetMode {
 
 /**
  * Whether Gabo's Claude Code sessions run the user's own hooks (plugins like superpowers or remember).
- * Off by default: measured 2026-10-01, they added about 4.6 s to every session start and inject extra text
- * (tokens) into every session. Gabo's own safety hook runs either way.
+ * On by default (Gab wants his plugins). Turning them off saves about 4.6 s per session start and the text they
+ * inject (measured 2026-10-01). Gabo's own safety hook runs either way.
  */
 export function loadHooks(file = BUDGET_FILE): boolean {
-  return readFile(file).hooks === true;
+  return readFile(file).hooks !== false;
 }
 
 export function saveHooks(on: boolean, file = BUDGET_FILE): boolean {

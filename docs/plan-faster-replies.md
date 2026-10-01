@@ -154,7 +154,8 @@ shows tokens per day; add time to first token and total time per run.
 | 5 | Agent prompts: stable text first, the per-chat skill list last | `runner.ts` |
 | 6 | Deep tier runs agents in layers (parallel Agent calls) with per-room layers; parallel agents' text stays in their own blocks | `rooms.ts`, `transcript.ts` |
 | 7 | Warm pool (one live session per chat, 10 min idle, max 3) + a prewarmed spare claimed by new chats | `src/harness/warmPool.ts` |
-| + | **User hooks off by default** (Settings → Token budget); Gabo's own safety hook still runs (verified) | `budget.ts`, runner |
+| + | User hooks toggle (Settings → Token budget); Gabo's own safety hook still runs (verified). **Default changed back to on** at Gab's request (he wants his plugins); off saves about 4.6 s per session start | `budget.ts`, runner |
+| + | **Router v2** (same day): a score instead of first-match rules (deliverables, amounts, several steps, lookups, length, minus plain short questions); a **Redo with real agents** button; per-room learning from corrections (±0.75 each, capped ±3) | `router.ts`, `routerFeedback.ts`, `Console.tsx` |
 
 ### Measured live on this laptop (Haiku, Home, "reply with one word")
 

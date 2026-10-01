@@ -24,13 +24,13 @@ It runs on the AI account you connect: a **Claude**, **OpenAI** or **Gemini** AP
   - **Laboratory** (you pick the team)
 
   In every room, agents answer each other's points and pass work along, and the chat shows who builds on whom.
-- **Team size that fits the prompt:** a router (rules on your prompt, no model call) picks a tier.
+- **Team size that fits the prompt:** a router picks a tier with no model call. It scores the prompt: things you ask it to produce (a plan, questions), amounts ("3 examples"), several steps ("then…"), lookups and length. Plain short questions are Quick.
   - **Quick:** short questions. The team answers together in one reply.
   - **Standard:** regular tasks. Like Quick, with at most one real agent when a role needs tools.
   - **Deep:** build work, long tasks, the Arena tournament. Real agents, with independent ones running in parallel.
 
   A team-in-one-reply answer used about half the tokens of a real-agent run in testing, and showed its first words about
-  5 s sooner. Add `--deep` or `--lite` to a message to choose the tier yourself.
+  5 s sooner. Add `--deep` or `--lite` to a message to choose the tier yourself, or press **Redo with real agents** on a team reply. Each correction teaches the router that room's habits.
 - **Your own agents:** describe an agent and generate its costume and background, or pick each part yourself.
 - **CLI-style console:**
   - permission prompts and plan approval
@@ -57,9 +57,9 @@ It runs on the AI account you connect: a **Claude**, **OpenAI** or **Gemini** AP
 - **Fast replies:**
   - each chat keeps its agent process warm between messages
   - a spare process waits for new chats
-  - your plugins' hooks are off inside Gabo by default, which saves about 4–5 s per session (they can be switched back on)
+  - your plugins' hooks run inside Gabo by default; turning them off in Settings saves about 4–5 s per session start
 
-  Measured: messages went from 8–9 s to about 3 s.
+  Measured with hooks off: messages went from 8–9 s to about 3 s.
 - **Status page:**
   - **Analytics** for the last 7 days: tokens per day split into fresh input, cache writes, cache reads and output; the change from last week; reply speed; top room and model
   - plan usage, connectivity, MCP servers, plugins and versions

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import path from "node:path";
-import { routePrompt, tierTag } from "./router";
+import { biasFrom, routePrompt, tierTag } from "./router";
 import { cleanUserText } from "./history";
 import { makePersonaSplitter } from "./personaSplit";
 import { buildOptions } from "./runner";
@@ -15,11 +15,29 @@ describe("complexity router", () => {
     expect(routePrompt("What's the difference between a list and a tuple?", "library").tier).toBe("quick");
     expect(routePrompt("what is a binary search?", "library").tier).toBe("quick");
     expect(routePrompt("make me a 2 week study plan for my calculus exam", "library").tier).toBe("standard");
-    expect(routePrompt("find the latest sources on transformer efficiency", "library")).toMatchObject({ tier: "standard", reason: expect.stringMatching(/tool/) });
+    expect(routePrompt("find the latest sources on transformer efficiency", "library")).toMatchObject({ tier: "standard", reason: expect.stringMatching(/look things up/) });
     expect(routePrompt("build a landing page with a signup form", "hackathon").tier).toBe("deep");
     expect(routePrompt("why does src/app/page.tsx crash?", "hackathon").tier).toBe("deep");
     expect(routePrompt("coffee ideas", "arena").tier).toBe("deep");
     expect(routePrompt("x".repeat(1300), "library").tier).toBe("deep");
+  });
+  it("scores what the message asks for: deliverables, amounts and several steps lift a question out of Quick", () => {
+    const r = routePrompt("Explain binary search simply, then give me 3 practice questions with answers.", "library");
+    expect(r.tier).toBe("standard");
+    expect(r.reason).toMatch(/asks for something to produce/);
+    expect(routePrompt("What is recursion?", "library").tier).toBe("quick");
+    expect(routePrompt("Can you give me five examples of closures?", "library").tier).toBe("standard");
+    expect(routePrompt("Compare SQL and NoSQL in a table", "library").tier).toBe("standard");
+    const big = "Research the main study techniques, then compare them in a table, also give me a 4 week plan and 10 practice questions, finally a checklist for exam day.";
+    expect(routePrompt(big, "library").tier).toBe("deep");
+  });
+  it("leans with Gab's corrections in that room", () => {
+    expect(biasFrom({ deep: 3 })).toBe(2.25);
+    expect(biasFrom({ deep: 10 })).toBe(3);
+    expect(biasFrom({ lite: 2, deep: 1 })).toBe(-0.75);
+    expect(routePrompt("What is recursion?", "library", 0, 3).tier).toBe("standard");
+    expect(routePrompt("What is recursion?", "library", 0, 3).reason).toMatch(/wanted more team/);
+    expect(routePrompt("Make me a study plan", "library", 0, -3).tier).toBe("quick");
   });
   it("--deep and --lite force a tier and are removed from the prompt", () => {
     expect(routePrompt("explain recursion --deep", "library")).toEqual({ tier: "deep", reason: "you asked for --deep", prompt: "explain recursion" });

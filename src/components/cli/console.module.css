@@ -219,3 +219,7 @@
 .contextGuard span { flex: 1 1 260px; }
 .contextGuard button { background: var(--raised); border: 1px solid var(--line-strong); border-radius: 6px; padding: 3px 10px; color: var(--text); font: inherit; }
 .status [data-heavy="true"] { color: var(--warn); }
+
+.tierNote { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; color: var(--muted); font-size: 12.5px; }
+.tierNote button { background: none; border: 1px solid var(--line-strong); border-radius: 6px; padding: 1px 8px; color: var(--text); font: inherit; font-size: 12px; }
+.tierNote button:hover { border-color: var(--blue-text); }

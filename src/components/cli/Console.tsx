@@ -295,7 +295,7 @@ export function Console({ room, conversationId, sessionId, team, label, placehol
         <ol className={styles.transcript} aria-live="polite" aria-busy={t.running}>
           {t.items.map((item, i) => (
             <li key={i}>
-              <ItemView item={item} meta={meta} onAnswer={answer} onSkills={(names) => dispatch(names.length ? { type: "skills_installed", names } : { type: "skills_dismissed" })} />
+              <ItemView item={item} meta={meta} onAnswer={answer} onSkills={(names) => dispatch(names.length ? { type: "skills_installed", names } : { type: "skills_dismissed" })} onRedo={t.running ? undefined : (p) => void submit(`${p} --deep`)} />
             </li>
           ))}
         </ol>
@@ -336,7 +336,7 @@ function Markdown({ text }: { text: string }) {
 
 type Answer = (id: string, d: Decision, answers?: Record<string, string>) => void;
 
-function ItemView({ item, meta, onAnswer, onSkills }: { item: Item; meta: Meta; onAnswer: Answer; onSkills: (names: string[]) => void }) {
+function ItemView({ item, meta, onAnswer, onSkills, onRedo }: { item: Item; meta: Meta; onAnswer: Answer; onSkills: (names: string[]) => void; onRedo?: (prompt: string) => void }) {
   switch (item.kind) {
     case "user":
       return (
@@ -407,6 +407,13 @@ function ItemView({ item, meta, onAnswer, onSkills }: { item: Item; meta: Meta; 
       );
     case "notice":
       return <pre className={styles.notice}>{item.text}</pre>;
+    case "tier":
+      return (
+        <div className={styles.tierNote}>
+          <span>{item.tier === "quick" ? "Quick" : "Standard"} reply ({item.reason}): the team answers together in one reply to save tokens.</span>
+          {onRedo && <button type="button" onClick={() => onRedo(item.prompt)} title="Runs this message again with separate agents, and teaches the router">Redo with real agents</button>}
+        </div>
+      );
     case "summary":
       return (
         <details className={styles.summary}>
