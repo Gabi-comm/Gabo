@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { activeBackend, disconnect, loadKind, publicBackend, saveConnection, translateSecret } from "./backend";
-import { blockedServers, connectorNote, connectorRoots, connectorServers, mcpToolPrefix, pluginAllowed, EMPTY_CONNECTORS } from "@/harness/connectors";
+import { blockedServers, neededContext, connectorNote, connectorRoots, connectorServers, mcpToolPrefix, pluginAllowed, EMPTY_CONNECTORS } from "@/harness/connectors";
 import { keywordScout, words } from "@/harness/skills/keywords";
 
 const OFF = { enabled: false, baseUrl: "http://127.0.0.1:11434", model: "" };
@@ -67,10 +67,12 @@ describe("connectors", () => {
   const cfg = { ...EMPTY_CONNECTORS, plugins: { "plugin:canva:canva": true }, notion: { enabled: true, token: "ntn_" + "a".repeat(30) }, obsidian: { enabled: true, vault: "C:/Vault" },
     custom: [{ id: "c-mem", name: "Memory", command: "npx", args: ["-y", "@modelcontextprotocol/server-memory"], enabled: true }, { id: "c-off", name: "Off", url: "http://127.0.0.1:9/mcp", enabled: false }] };
 
-  it("GitHub is allowed by default, other plugins only when switched on", () => {
-    expect(pluginAllowed(EMPTY_CONNECTORS, "plugin:github:github")).toBe(true);
-    expect(pluginAllowed(EMPTY_CONNECTORS, "plugin:supabase:supabase")).toBe(false);
-    expect(blockedServers(cfg, ["plugin:github:github", "plugin:canva:canva", "plugin:supabase:supabase"])).toEqual(["mcp__plugin_supabase_supabase"]);
+  it("plugins are off for the Local LLM until ticked, and the context window grows with them", () => {
+    expect(pluginAllowed(EMPTY_CONNECTORS, "plugin:github:github")).toBe(false);
+    expect(pluginAllowed(cfg, "plugin:canva:canva")).toBe(true);
+    expect(blockedServers(cfg, ["plugin:github:github", "plugin:canva:canva"])).toEqual(["mcp__plugin_github_github"]);
+    expect(neededContext(0)).toBe(16384);
+    expect(neededContext(1)).toBe(32768);
     expect(mcpToolPrefix("claude.ai Gmail")).toBe("mcp__claude_ai_Gmail");
   });
 

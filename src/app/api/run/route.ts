@@ -10,15 +10,16 @@ import { usableProviders } from "@/harness/providers";
 import { AI_SERVER, aiSystemNote, buildAiServer } from "@/harness/aiTools";
 import { loadProviders } from "@/server/providers";
 import { loadCustomAgents } from "@/server/customAgents";
-import { loadLocal } from "@/server/localLlm";
+import { loadLocal, modelDetails, prepareModel, saveLocal } from "@/server/localLlm";
 import { loadBudget } from "@/server/budget";
 import { appendUsage, recordRateLimit } from "@/server/usageLog";
 import { FAKE, getWorkspace, sessions, validateWorkspace } from "@/server/config";
 import { prepareSkills } from "@/server/skills";
+import { makeHeaderFilter } from "@/harness/localFilter";
 import { activeBackend } from "@/server/backend";
 import { loadConnectors } from "@/server/connectors";
-import { getClaudeInfo } from "@/server/claudeInfo";
-import { blockedServers, connectorNote, connectorRoots, connectorServers } from "@/harness/connectors";
+import { mcpConfigs } from "@/server/claudeInfo";
+import { connectorNote, connectorRoots, connectorServers, neededContext, pluginAllowed } from "@/harness/connectors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -39,9 +40,9 @@ export async function POST(req: Request) {
   }
   if (!isRoomId(room)) return Response.json({ error: "Unknown room." }, { status: 400 });
   const customAgents = loadCustomAgents();
-  const local = loadLocal();
+  let local = loadLocal();
   const budget = loadBudget();
-  const backend = activeBackend();
+  let backend = activeBackend();
   if (backend.problem) return Response.json({ error: backend.problem }, { status: 409 });
   if (room.startsWith("agent:x-") && !customAgents.some((a) => `agent:${a.id}` === room)) {
     return Response.json({ error: "That agent was deleted." }, { status: 404 });
@@ -68,8 +69,13 @@ export async function POST(req: Request) {
     async start(controller) {
       let closed = false;
       let runModel = local.enabled ? local.model : "";
-      const emit = (e: UiEvent) => {
+      const headerFilter = backend.kind === "local" ? makeHeaderFilter() : null;
+      const emit = (raw: UiEvent) => {
         if (closed) return;
+        if (headerFilter) { for (const e of headerFilter(raw)) send(e); return; }
+        send(raw);
+      };
+      const send = (e: UiEvent) => {
         if (e.type === "session") {
           runModel = e.model;
           if (!FAKE) sessions.upsert({ id: conversationId, sdkSessionId: e.sessionId });
@@ -103,15 +109,32 @@ export async function POST(req: Request) {
           // Other AIs from the Plugins page, as tools Claude can call (each call still asks Gab).
           const ais = usableProviders(loadProviders());
           const localOn = backend.kind === "local";
+          const connectors = loadConnectors();
+          // Local LLM: strict MCP, so only these servers load: Claude Code plugins Gab ticked, plus Gabo's own.
+          const allowedPlugins = localOn
+            ? Object.fromEntries(Object.entries(await mcpConfigs()).filter(([name]) => pluginAllowed(connectors, name)))
+            : {};
+          if (localOn) {
+            // A model on a window smaller than Gabo's prompt only sees its end and answers nonsense; give it a
+            // big enough window once (a copy, made in seconds) and use that from now on.
+            const need = neededContext(Object.keys(allowedPlugins).length);
+            const details = await modelDetails(local.baseUrl, local.model).catch(() => null);
+            if (details && (details.contextWindow ?? 0) < need) {
+              const prepared = await prepareModel(local.baseUrl, local.model, need);
+              emit({ type: "notice", text: `${local.model} only read ${details.contextWindow ? details.contextWindow.toLocaleString() : "about 4,000"} tokens, less than Gabo's prompt, so Gabo made ${prepared} with a ${need / 1024}k window and switched to it.` });
+              local = saveLocal({ model: prepared });
+              backend = activeBackend();
+              runModel = local.model;
+            }
+          }
           const skillsByAgent = await prepareSkills({ conversationId, room, prompt, workspace, firstTurn: !existing?.sdkSessionId, emit, signal: abort.signal, team, customAgents, offline: localOn });
           // Plugins connected on the Local LLM page: Gabo starts them itself, so they work on any account.
-          const connectors = loadConnectors();
-          const servers = { ...connectorServers(connectors), ...(ais.length ? { [AI_SERVER]: buildAiServer(ais) } : {}) };
+          const servers = { ...allowedPlugins, ...connectorServers(connectors), ...(ais.length ? { [AI_SERVER]: buildAiServer(ais) } : {}) };
           const notes = [ais.length ? aiSystemNote(ais) : undefined, connectorNote(connectors)].filter(Boolean).join("\n");
           // Local LLM: only the picked skills and the allowed MCP servers reach the model (docs/plan-local-llm-tools.md).
           const localSlim = localOn ? {
             skills: [...new Set([...Object.values(skillsByAgent).flat().filter((x): x is string => !!x), ...connectors.pinnedSkills])],
-            blockedMcp: blockedServers(connectors, (await getClaudeInfo().catch(() => null))?.mcp.map((m) => m.name) ?? []),
+            blockedMcp: [],
           } : undefined;
           await runRoom({
             runId, conversationId, room, prompt, workspace, emit, signal: abort.signal,

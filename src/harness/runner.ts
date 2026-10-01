@@ -125,6 +125,9 @@ export function buildOptions({ room, workspace, spec, sessionId, skillsByAgent =
     ...(extraRoots.length ? { additionalDirectories: extraRoots } : {}),
     ...(slim ? {
       tools: room === "home" ? LOCAL_TOOLS : [...LOCAL_TOOLS, "Agent"],
+      strictMcpConfig: true,
+      // Instructions a small model tends to read back to the user instead of following.
+      settings: { includeGitInstructions: false, includeCoAuthoredBy: false, attribution: { commit: "", pr: "" }, disableClaudeAiConnectors: true },
       skills: slim.skills,
       ...(slim.blockedMcp.length ? { disallowedTools: slim.blockedMcp } : {}),
     } : {}),

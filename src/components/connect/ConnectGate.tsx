@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { Mascot } from "@/components/mascot/Mascot";
 import { ConnectPanel } from "./ConnectPanel";
 import styles from "./connect.module.css";
@@ -12,10 +12,13 @@ const DISMISSED_KEY = "gabo:connect-dismissed";
 export function ConnectGate({ ready }: { ready: boolean }) {
   const [open, setOpen] = useState(false);
   const router = useRouter();
+  const pathname = usePathname();
+  // The pages it points to are where connecting happens; don't cover them.
+  const onSetupPage = pathname === "/connect" || pathname === "/local-llm";
   const dialog = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!ready) return;
+    if (!ready || onSetupPage) return;
     let dismissed = false;
     try { dismissed = sessionStorage.getItem(DISMISSED_KEY) === "1"; } catch { /* storage blocked */ }
     if (dismissed) return;
@@ -23,7 +26,7 @@ export function ConnectGate({ ready }: { ready: boolean }) {
       .then((r) => r.json())
       .then((b) => { if (b?.kind === "none" && !b?.local?.enabled) setOpen(true); })
       .catch(() => {});
-  }, [ready]);
+  }, [ready, onSetupPage]);
 
   useEffect(() => {
     if (!open) return;
@@ -38,7 +41,7 @@ export function ConnectGate({ ready }: { ready: boolean }) {
     try { sessionStorage.setItem(DISMISSED_KEY, "1"); } catch { /* storage blocked */ }
   }
 
-  if (!open) return null;
+  if (!open || onSetupPage) return null;
   return (
     <div className={styles.scrim}>
       <div ref={dialog} className={styles.dialog} role="dialog" aria-modal="true" aria-labelledby="connect-title">

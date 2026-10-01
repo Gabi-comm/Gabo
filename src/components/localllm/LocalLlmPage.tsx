@@ -12,8 +12,10 @@ interface Ollama { running: boolean; version?: string; models: Model[]; error?: 
 interface Details { contextWindow: number | null; maxContext: number | null; tools: boolean; capabilities: string[] }
 
 const gb = (n: number) => `${(n / 1e9).toFixed(1)} GB`;
-/** Gabo's slim local prompt is about 12k tokens; 16k is the floor, 32k leaves room for the chat. */
+/** Gabo's slim local prompt measured about 6k tokens without plugins; 16k leaves room for the chat. */
 const MIN_CONTEXT = 16384;
+/** Below this many billion parameters, models echo their instructions instead of following them. */
+const MIN_PARAMS_B = 4;
 
 /** Models that call tools reliably, smallest first, with the memory they need at a 32k context. */
 const RECOMMENDED = [
@@ -37,7 +39,7 @@ export function LocalLlmPage() {
   const [pull, setPull] = useState<{ status: string; pct: number } | null>(null);
   const [details, setDetails] = useState<Details | null>(null);
   const [ramGb, setRamGb] = useState<number | null>(null);
-  const [numCtx, setNumCtx] = useState(32768);
+  const [numCtx, setNumCtx] = useState(16384);
   const [tested, setTested] = useState<Record<string, boolean>>({});
 
   const load = useCallback(async () => {
@@ -139,12 +141,16 @@ export function LocalLlmPage() {
   const on = !!config?.enabled;
   const installed = new Set(ollama?.models.map((m) => m.name.replace(/:latest$/, "")) ?? []);
   const contextOk = (details?.contextWindow ?? 0) >= MIN_CONTEXT;
+  const picked = ollama?.models.find((m) => m.name === model);
+  const paramsB = picked?.parameterSize ? parseFloat(picked.parameterSize) : null;
+  const tooSmall = paramsB !== null && /B$/i.test(picked!.parameterSize!) && paramsB < MIN_PARAMS_B;
   const fits = (ram: number) => ramGb === null || ramGb >= ram - 1;
   const checks = [
     { label: "Ollama is running", ok: !!ollama?.running },
     { label: "A model is picked", ok: !!model },
     { label: `Context window of ${MIN_CONTEXT / 1024}k or more`, ok: contextOk, detail: details ? (details.contextWindow ? `${details.contextWindow.toLocaleString()} tokens` : "Ollama's default (about 4k): press Prepare model") : undefined },
     { label: "The model supports tools", ok: !!details?.tools },
+    { label: `Big enough to follow instructions (${MIN_PARAMS_B}B or more)`, ok: !tooSmall, detail: tooSmall ? `${picked!.parameterSize}: it will repeat its instructions instead of doing the task; download qwen3:4b or qwen3:8b` : undefined },
     { label: "Test model made a tool call", ok: tested[model] === true, detail: tested[model] === undefined ? "press Test model" : undefined },
     { label: "Switched on", ok: on },
   ];
@@ -177,12 +183,12 @@ export function LocalLlmPage() {
               ))}
             </ul>
           </li>
-          <li><strong>Pick it below and press Prepare model.</strong> Gabo&apos;s prompt is about 12k tokens and Ollama&apos;s default window (about 4k) cuts it off, so Gabo makes a copy with a bigger window.</li>
+          <li><strong>Pick it below and press Prepare model.</strong> Gabo&apos;s prompt is about 6k tokens (16k or more with plugins) and Ollama&apos;s default window (about 4k) cuts it off, so Gabo makes a copy with a bigger window. Pick 32k if you tick plugins below; Gabo also does this by itself on the first message.</li>
           <li><strong>Press Test model.</strong> It must make a tool call: agents use tools for skills, files and plugins.</li>
           <li><strong>Flip the switch.</strong> Every room and agent now runs on the local model, with no AI account or key needed.</li>
           <li><strong>Optional: connect plugins</strong> (GitHub, Notion, Obsidian and more) in <a href="#plugins">Plugins for Local LLM</a>.</li>
         </ol>
-        <p className={styles.muted}>Tip: set <code>OLLAMA_FLASH_ATTENTION=1</code> and <code>OLLAMA_KV_CACHE_TYPE=q8_0</code> before starting Ollama to halve the memory a long context uses.</p>
+        <p className={styles.muted}>Speed depends on graphics memory. A model and its context that don&apos;t fit on the GPU run on the processor: with 4 GB of VRAM, qwen3:8b answers at about 3 words per second at 16k and about 1 at 32k. Fewer plugins and a smaller window are faster. Tip: set <code>OLLAMA_FLASH_ATTENTION=1</code> and <code>OLLAMA_KV_CACHE_TYPE=q8_0</code> before starting Ollama to halve the memory a long context uses.</p>
       </section>
 
       <section className={styles.card} aria-label="Switch">
@@ -219,6 +225,7 @@ export function LocalLlmPage() {
           <div className={styles.row}>
             <select aria-label="Context window" value={numCtx} onChange={(e) => setNumCtx(Number(e.target.value))}>
               <option value={16384}>16k context</option>
+              <option value={24576}>24k context</option>
               <option value={32768}>32k context</option>
               <option value={65536}>64k context</option>
             </select>

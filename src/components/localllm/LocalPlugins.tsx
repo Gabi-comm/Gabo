@@ -73,7 +73,7 @@ export function LocalPlugins() {
   return (
     <section id="plugins" className={styles.card} aria-label="Plugins for Local LLM">
       <h2>Plugins for Local LLM</h2>
-      <p className={styles.muted}>Choose what the local model can use. Fewer plugins means a shorter prompt and faster answers. Notion, Obsidian and your own plugins also work with a connected AI account.</p>
+      <p className={styles.muted}>Choose what the local model can use. Each plugin adds its tools to every message (GitHub alone is about 10k tokens), so tick only what you need: fewer plugins means faster answers. Notion, Obsidian and your own plugins also work with a connected AI account.</p>
       {error && <p className={styles.error} role="alert">{error}</p>}
       {!view && !error && <p className={styles.muted}>Loading…</p>}
       {view && (

@@ -690,7 +690,7 @@ test("first run: after the intro a pop-up asks to connect an AI; Connect opens t
   expect((await popup).url()).toContain("platform.openai.com/api-keys");
   await page.getByLabel("OpenAI API key").fill("sk-bad-" + "x".repeat(30));
   await page.getByRole("button", { name: "Test and connect" }).click();
-  await expect(page.getByRole("alert")).toContainText("rejected the key");
+  await expect(page.getByText(/rejected the key/)).toBeVisible();
   await page.getByLabel("OpenAI API key").fill("sk-proj-" + "y".repeat(30));
   await page.getByRole("button", { name: "Test and connect" }).click();
   await expect(page.getByText("Connected to OpenAI.")).toBeVisible();
@@ -718,13 +718,15 @@ test("pop-up: Use Local LLM opens the setup guide; the Local LLM page prepares t
   await page.getByLabel("Model", { exact: true }).selectOption("qwen3-coder:30b");
   await expect(page.getByLabel("Model details")).toContainText("Ollama default");
   await page.getByRole("button", { name: "Prepare model" }).click();
-  await expect(page.getByText(/Ready: qwen3-coder-30b-gabo-32k/)).toBeVisible();
+  await expect(page.getByText(/Ready: qwen3-coder-30b-gabo-16k/)).toBeVisible();
   await page.getByRole("button", { name: "Test model" }).click();
   await expect(page.getByText(/Tools work/)).toBeVisible();
   const ready = page.getByRole("region", { name: "Readiness" });
-  await expect(ready.locator("li[data-ok=true]")).toHaveCount(5);
+  await expect(ready.locator("li[data-ok=true]")).toHaveCount(6);
 
   const plugins = page.getByRole("region", { name: "Plugins for Local LLM" });
+  await expect(plugins.getByLabel("github")).not.toBeChecked();
+  await plugins.getByLabel("github").click();
   await expect(plugins.getByLabel("github")).toBeChecked();
   await expect(plugins.getByText("needs a Claude login, not available locally")).toBeVisible();
   await plugins.getByLabel("Notion token").fill("not-a-token");

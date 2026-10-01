@@ -26,9 +26,17 @@ export const EMPTY_CONNECTORS: ConnectorsConfig = {
   plugins: {}, notion: { enabled: false }, obsidian: { enabled: false, vault: "" }, custom: [], pinnedSkills: [],
 };
 
-/** Unlisted servers: only GitHub is on by default, the rest are off to keep the local prompt small. */
+/**
+ * Plugins are off for the Local LLM until ticked: each one adds its tool list to the prompt (GitHub alone is
+ * about 10k tokens), which a small model reads slowly. Measured: docs/plan-local-llm-tools.md.
+ */
 export function pluginAllowed(cfg: ConnectorsConfig, server: string): boolean {
-  return cfg.plugins[server] ?? /github/i.test(server);
+  return cfg.plugins[server] ?? false;
+}
+
+/** Context window a local run needs: Gabo's slim prompt is about 6k tokens, plus about 10k per plugin's tools. */
+export function neededContext(pluginCount: number): number {
+  return pluginCount > 0 ? 32768 : 16384;
 }
 
 /** Claude Code's tool prefix for an MCP server: mcp__<name with odd characters as _>. */

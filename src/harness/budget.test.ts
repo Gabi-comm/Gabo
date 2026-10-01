@@ -107,6 +107,7 @@ describe("Local LLM slim profile", () => {
     const o = buildOptions({ room: "library", workspace: path.resolve("/w"), spec, local, localSlim: { skills: ["unslop"], blockedMcp: ["mcp__plugin_supabase_supabase"] } });
     expect(o.tools).toEqual(["Read", "Write", "Edit", "Glob", "Grep", "Bash", "Skill", "WebFetch", "Agent"]);
     expect(o.skills).toEqual(["unslop"]);
+    expect(o.strictMcpConfig).toBe(true);
     expect(o.disallowedTools).toEqual(["mcp__plugin_supabase_supabase"]);
     expect((o.systemPrompt as { append: string }).append).toMatch(/small local model/);
     expect(buildOptions({ room: "home", workspace: path.resolve("/w"), spec, local }).tools).not.toContain("Agent");

@@ -35,5 +35,7 @@ export function localEnv(c: LocalLlmConfig): Record<string, string> {
     ANTHROPIC_DEFAULT_SONNET_MODEL: c.model,
     ANTHROPIC_DEFAULT_HAIKU_MODEL: c.model,
     CLAUDE_CODE_SUBAGENT_MODEL: c.model,
+    // claude.ai connectors belong to a Claude login; a local model can't use them.
+    ENABLE_CLAUDEAI_MCP_SERVERS: "false",
   };
 }

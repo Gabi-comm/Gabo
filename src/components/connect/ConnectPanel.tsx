@@ -31,11 +31,16 @@ export function ConnectPanel({ onConnected, onUseLocal, compact = false }: {
     fetch("/api/backend", { cache: "no-store" }).then((r) => r.json()).then(setBackend).catch(() => {});
   }, []);
 
+  // Switching provider resets the form; a reload of the saved connection must not wipe the result message.
+  const savedTiers = backend?.tiers[provider];
   useEffect(() => {
-    setTiers(backend?.tiers[provider] ?? PROVIDERS[provider].tiers);
+    setTiers(savedTiers ?? PROVIDERS[provider].tiers);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [provider, savedTiers?.opus, savedTiers?.sonnet, savedTiers?.haiku]);
+  useEffect(() => {
     setModels([]);
     setMsg(null);
-  }, [provider, backend]);
+  }, [provider]);
 
   const p = PROVIDERS[provider];
   const saved = backend?.keys[provider];

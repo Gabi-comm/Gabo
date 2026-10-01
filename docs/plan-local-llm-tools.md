@@ -129,7 +129,25 @@ went to the Claude plan (must be none).
 | Phase 3 Slim profile | `buildOptions` with `localSlim`: `tools` = Read, Write, Edit, Glob, Grep, Bash, Skill, WebFetch (+ Agent outside Home), `skills` = picked + pinned, `disallowedTools` = MCP servers not ticked, plus a short "small local model" note. |
 | Phase 4 Connectors | Local LLM page → **Plugins for Local LLM**: Claude Code plugin servers (GitHub on by default; claude.ai connectors greyed out), Notion (`@notionhq/notion-mcp-server`, token), Obsidian (vault folder added to `additionalDirectories` and the path guard), custom MCP servers (command or URL), pinned skills. Each has **Test** (starts it with the MCP SDK and lists its tools). Notion, Obsidian and custom servers work on every backend. |
 | Phase 5 Fully local | Skill scout uses keyword matching when local (`src/harness/skills/keywords.ts`); `askHaiku`, Claude Code info, New Session and the scout all use the active backend's environment. |
-| Phase 6 Proof | **Readiness** card (Ollama, model, context ≥16k, tools, test passed, switched on). |
+| Phase 6 Proof | **Readiness** card (Ollama, model, context ≥16k, tools, size ≥4B, test passed, switched on). |
+
+### Measured live (2026-10-01, this laptop: 16 GB RAM, RTX 2050 4 GB)
+- Slim local prompt: **about 17,000 tokens** (vs about 80,000 with the full tool set on a key connection). Ollama processed it in about 65 s (≈265 tokens/s).
+- `qwen3-8b-gabo-32k`: 10 GB loaded, 77% on CPU, so it generates at **about 1 token/s**. It works but is too slow for real use on this machine.
+- `qwen3:8b` passes the tool-call test (`read_note({"title":"Groceries"})`, 43 s).
+- That first slim prompt still carried every Claude Code MCP server's instructions and connection notices (about 20 servers, incl. claude.ai connectors). With a 4k window, llama3.2 only saw that tail and replied with it (Gab's report, 2026-10-01).
+
+### Fix (2026-10-01, after Gab's report)
+- Local runs use **strict MCP**: only ticked plugins plus Gabo's own connectors load; claude.ai connectors off (`ENABLE_CLAUDEAI_MCP_SERVERS=false`, `disableClaudeAiConnectors`); git/attribution instructions off.
+- Plugins are **off by default** for the Local LLM (GitHub's tools alone are about 10k tokens).
+- The run checks the model's window and **auto-prepares** a copy (16k without plugins, 32k with) with a notice in the chat.
+- A filter drops a leaked `assistant` header at the start of replies; Readiness flags models under 4B.
+
+| Measured (16 GB RAM, RTX 2050 4 GB) | Prompt | Speed | Result |
+| --- | --- | --- | --- |
+| qwen3:8b, 16k, no plugins | **about 5.6k tokens** | about 3.3 tokens/s | Read(note.txt) → "The secret word in note.txt is HERON." |
+| qwen3:8b, 32k, GitHub on | about 16.6k tokens | about 1.2 tokens/s | correct, 7.7 min |
+| llama3.2 (3B), 32k | about 3.1k (its template drops the tool list) | fast | echoes its instructions: too small |
 
 Also built the same day: **Connect** (`src/harness/backend.ts`, `src/server/backend.ts`): Claude API key (native),
 OpenAI and Gemini keys through Gabo's own Anthropic↔OpenAI translator (`src/harness/translate.ts`,

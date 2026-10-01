@@ -1,12 +1,13 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import type { McpServerConfig } from "@anthropic-ai/claude-agent-sdk";
 import { FAKE, getWorkspace } from "./config";
 
 export interface ClaudeInfo {
   commands: { name: string; description: string; argumentHint: string }[];
   models: { value: string; displayName: string; description: string }[];
-  mcp: { name: string; status: string; error?: string }[];
+  mcp: { name: string; status: string; error?: string; source?: string }[];
   account: { email?: string; subscriptionType?: string };
   outputStyle: string;
   /** permissions.defaultMode from ~/.claude/settings.json, so the app starts where the CLI does. */
@@ -16,7 +17,7 @@ export interface ClaudeInfo {
 }
 
 const TTL_MS = 5 * 60_000;
-const g = globalThis as unknown as { __gaboInfo?: { at: number; info: Promise<ClaudeInfo> } };
+const g = globalThis as unknown as { __gaboInfo?: { at: number; info: Promise<ClaudeInfo> }; __gaboMcpConfigs?: Record<string, McpServerConfig> };
 
 const FAKE_INFO: ClaudeInfo = {
   commands: [
@@ -76,10 +77,17 @@ async function read(): Promise<ClaudeInfo> {
   try {
     const init = await q.initializationResult();
     const mcp = await q.mcpServerStatus();
+    // Configs can hold tokens (headers, env): kept on the server, never in ClaudeInfo (which the browser gets).
+    const configs: Record<string, McpServerConfig> = {};
+    for (const s of mcp) {
+      const c = s.config as { type?: string; url?: string } | undefined;
+      if (c && c.type !== "claudeai-proxy" && (c.type !== "http" || c.url)) configs[s.name] = c as McpServerConfig;
+    }
+    g.__gaboMcpConfigs = configs;
     return {
       commands: init.commands.map((c) => ({ name: c.name, description: c.description, argumentHint: c.argumentHint })),
       models: init.models.map((m) => ({ value: m.value, displayName: m.displayName, description: m.description })),
-      mcp: mcp.map((s) => ({ name: s.name, status: s.status, ...(s.error ? { error: s.error } : {}) })),
+      mcp: mcp.map((s) => ({ name: s.name, status: s.status, ...(s.error ? { error: s.error } : {}), ...(s.source ? { source: s.source } : {}) })),
       account: { email: init.account?.email, subscriptionType: init.account?.subscriptionType },
       outputStyle: init.output_style,
       defaultMode: userDefaultMode(),
@@ -89,6 +97,13 @@ async function read(): Promise<ClaudeInfo> {
     q.close();
     abortController.abort();
   }
+}
+
+/** The configs of Claude Code's own MCP servers (plugins, settings), by name. claude.ai connectors excluded. */
+export async function mcpConfigs(): Promise<Record<string, McpServerConfig>> {
+  if (FAKE) return { "plugin:github:github": { type: "http", url: "https://api.githubcopilot.com/mcp/" } };
+  await getClaudeInfo().catch(() => null);
+  return g.__gaboMcpConfigs ?? {};
 }
 
 export function getClaudeInfo(refresh = false): Promise<ClaudeInfo> {

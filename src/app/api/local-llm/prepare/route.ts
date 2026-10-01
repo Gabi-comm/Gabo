@@ -10,7 +10,7 @@ export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
   const config = loadLocal();
   const model = typeof body.model === "string" && body.model ? body.model : config.model;
-  const numCtx = [8192, 16384, 32768, 65536].includes(body.numCtx) ? body.numCtx : 32768;
+  const numCtx = [16384, 24576, 32768, 65536].includes(body.numCtx) ? body.numCtx : 32768;
   if (!model) return Response.json({ error: "Pick a model first." }, { status: 400 });
   try {
     const name = await prepareModel(config.baseUrl, model, numCtx);
