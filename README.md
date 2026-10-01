@@ -126,7 +126,3 @@ tests/e2e/        Playwright tests
 - [docs/token-budget.md](docs/token-budget.md): why each agent runs on the model it does
 - [docs/plan-local-llm-tools.md](docs/plan-local-llm-tools.md): Local LLM skills and plugins, with measurements
 - [docs/plan-token-reduction.md](docs/plan-token-reduction.md): research behind the token savings
-
-## License
-
-No license has been chosen yet, so all rights are reserved by the author. `vendor/idea-arena` is MIT-licensed by its author.
