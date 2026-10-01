@@ -27,6 +27,8 @@ export interface Transcript {
   mode?: string;
   /** The latest TodoWrite list, shown above the input like the CLI. */
   todos?: Todo[];
+  /** Tokens the chat re-reads on every message (the lead's last prompt size). */
+  context?: number;
 }
 
 export type Action =
@@ -75,6 +77,18 @@ export function reduce(t: Transcript, a: Action): Transcript {
       if (last?.kind === "text" && last.agent === a.agent) {
         return { ...t, items: [...t.items.slice(0, -1), { ...last, text: last.text + a.delta }] };
       }
+      // Agents running in parallel stream at the same time: keep each one's text in its own block
+      // (the latest text item since that agent started) instead of interleaving fragments.
+      if (a.agent) {
+        const startAt = t.items.findLastIndex((i) => i.kind === "agent" && i.agent === a.agent);
+        const textAt = t.items.findLastIndex((i) => i.kind === "text" && i.agent === a.agent);
+        if (textAt > startAt && startAt !== -1) {
+          const item = t.items[textAt] as Extract<Item, { kind: "text" }>;
+          const items = t.items.slice();
+          items[textAt] = { ...item, text: item.text + a.delta };
+          return { ...t, items };
+        }
+      }
       return { ...t, items: [...t.items, { kind: "text", agent: a.agent, text: a.delta }] };
     }
     case "tool_start":
@@ -111,7 +125,7 @@ export function reduce(t: Transcript, a: Action): Transcript {
     case "skills_dismissed":
       return { ...t, items: patchLast(t.items, "skills", () => true, { dismissed: true }) };
     case "result":
-      return { ...t, tokens: t.tokens + a.inputTokens + a.outputTokens, costUsd: t.costUsd + a.costUsd };
+      return { ...t, tokens: t.tokens + a.inputTokens + a.outputTokens, costUsd: t.costUsd + a.costUsd, ...(a.contextTokens ? { context: a.contextTokens } : {}) };
     case "error":
       return { ...t, items: [...t.items, { kind: "error", message: a.message, hint: a.hint }] };
     case "done":

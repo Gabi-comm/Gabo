@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { isRoomId } from "@/harness/rooms";
 import { broker, pendingAnswers } from "@/harness/permissions";
 import { fakeRun, runRoom } from "@/harness/runner";
 import type { UiEvent } from "@/harness/events";
@@ -11,11 +10,15 @@ import { AI_SERVER, aiSystemNote, buildAiServer } from "@/harness/aiTools";
 import { loadProviders } from "@/server/providers";
 import { loadCustomAgents } from "@/server/customAgents";
 import { loadLocal, modelDetails, prepareModel, saveLocal } from "@/server/localLlm";
-import { loadBudget } from "@/server/budget";
+import { loadBudget, loadHooks } from "@/server/budget";
 import { logRun, recordRateLimit } from "@/server/usageLog";
 import { FAKE, getWorkspace, sessions, validateWorkspace } from "@/server/config";
 import { prepareSkills } from "@/server/skills";
 import { makeHeaderFilter } from "@/harness/localFilter";
+import { routePrompt, tierTag } from "@/harness/router";
+import { makePersonaSplitter } from "@/harness/personaSplit";
+import { isRoomId, isTeamRoom, rosterFor } from "@/harness/rooms";
+import { AGENTS, isAgentId } from "@/harness/agents";
 import { activeBackend } from "@/server/backend";
 import { loadConnectors } from "@/server/connectors";
 import { mcpConfigs } from "@/server/claudeInfo";
@@ -55,6 +58,12 @@ export async function POST(req: Request) {
   if (prompt.length > MAX_PROMPT) return Response.json({ error: `Prompt is over ${MAX_PROMPT.toLocaleString()} characters.` }, { status: 413 });
   if (active.has(conversationId)) return Response.json({ error: "A run is already going in this chat." }, { status: 409 });
 
+  // Workspace rooms on a strong model: pick how much team the prompt needs (docs/plan-faster-replies.md §1).
+  // Local models can't write several roles well, so they keep real agents one at a time.
+  const route = isTeamRoom(room) && backend.kind !== "local" ? routePrompt(prompt, room, images.length) : null;
+  // The tier rides on the message (after the cached prefix), not in the system prompt.
+  const runPrompt = route ? `${tierTag(route.tier)} ${route.prompt}` : prompt;
+
   active.add(conversationId);
   const existing = sessions.get(conversationId);
   // The Laboratory team is fixed per chat: first message sets it, later messages reuse it.
@@ -74,10 +83,17 @@ export async function POST(req: Request) {
       const runStart = Date.now();
       let firstTokenAt = 0;
       const headerFilter = backend.kind === "local" ? makeHeaderFilter() : null;
+      // Team in one reply: the lead's `### <agent>` turns become agent blocks.
+      const splitter = route && route.tier !== "deep"
+        ? makePersonaSplitter(rosterFor(room, team).map((id) => ({
+            id,
+            names: isAgentId(id) ? [AGENTS[id].name] : [customAgents.find((c) => c.id === id)?.name ?? id],
+          })))
+        : null;
       const emit = (raw: UiEvent) => {
         if (closed) return;
-        if (headerFilter) { for (const e of headerFilter(raw)) send(e); return; }
-        send(raw);
+        const filtered = headerFilter ? headerFilter(raw) : [raw];
+        for (const e of filtered) for (const out of splitter ? splitter.push(e) : [e]) send(out);
       };
       const send = (e: UiEvent) => {
         if (!firstTokenAt && e.type === "text" && e.delta) firstTokenAt = Date.now();
@@ -100,9 +116,13 @@ export async function POST(req: Request) {
         try { controller.enqueue(encoder.encode(`data: ${JSON.stringify(e)}\n\n`)); } catch { closed = true; }
       };
       try {
+        if (route && route.tier !== "deep") {
+          emit({ type: "notice", text: `${route.tier === "quick" ? "Quick" : "Standard"} reply (${route.reason}): the team answers together in one reply to save tokens. Add --deep for separate agents.` });
+        }
         if (FAKE) {
           await fakeRun({
-            room, prompt, emit, signal: abort.signal, prefs: parseRunPrefs(body.prefs), images, team, customAgents, local, budget,
+            tier: route?.tier,
+            room, prompt: runPrompt, emit, signal: abort.signal, prefs: parseRunPrefs(body.prefs), images, team, customAgents, local, budget,
             ask: async (tool, summary, extra = {}) => {
               let requestId = "";
               const decision = await broker.request(runId, { tool, summary, input: {}, ...extra }, (r) => {
@@ -139,7 +159,8 @@ export async function POST(req: Request) {
               runModel = local.model;
             }
           }
-          const skillsByAgent = await prepareSkills({ conversationId, room, prompt, workspace, firstTurn: !existing?.sdkSessionId, emit, signal: abort.signal, team, customAgents, offline: localOn });
+          // Quick replies open no subagents, so there is nothing to pick skills for.
+          const skillsByAgent = route?.tier === "quick" ? {} : await prepareSkills({ conversationId, room, prompt: runPrompt, workspace, firstTurn: !existing?.sdkSessionId, emit, signal: abort.signal, team, customAgents, offline: localOn });
           // Plugins connected on the Local LLM page: Gabo starts them itself, so they work on any account.
           const servers = { ...allowedPlugins, ...connectorServers(connectors), ...(ais.length ? { [AI_SERVER]: buildAiServer(ais) } : {}) };
           const notes = [ais.length ? aiSystemNote(ais) : undefined, connectorNote(connectors)].filter(Boolean).join("\n");
@@ -149,7 +170,7 @@ export async function POST(req: Request) {
             blockedMcp: [],
           } : undefined;
           await runRoom({
-            runId, conversationId, room, prompt, workspace, emit, signal: abort.signal,
+            runId, conversationId, room, prompt: runPrompt, workspace, emit, signal: abort.signal, tier: route?.tier, userHooks: loadHooks(),
             sessionId: record.sdkSessionId, skillsByAgent, fullArena: body.full === true, prefs: parseRunPrefs(body.prefs), images, team, customAgents, local, budget,
             env: backend.env, localSlim, extraRoots: connectorRoots(connectors),
             ...(Object.keys(servers).length ? { mcpServers: servers } : {}),

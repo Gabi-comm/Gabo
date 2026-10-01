@@ -77,13 +77,24 @@ export async function prepareSkills({ conversationId, room, prompt, workspace, f
   if (!firstTurn && saved) return onlyInstalled(saved, installed);
 
   const roster = rosterFor(room, team);
-  if (offline) {
-    const lines = keywordScout(prompt, roster, local.map((l) => ({ name: l.name, description: l.description, installed: true })));
-    emit({ type: "skills", lines, missing: [], note: "Local LLM: skills picked by keyword match from installed skills (no Claude call)." });
-    const picked: SkillMap = Object.fromEntries(lines.map((l) => [l.agent, l.skills]));
+  // Keyword match first: instant, no model call, no network (plan-faster-replies §4).
+  const keywordLines = keywordScout(prompt, roster, local.map((l) => ({ name: l.name, description: l.description, installed: true })));
+  if (offline || keywordLines.some((l) => l.skills.length)) {
+    emit({ type: "skills", lines: keywordLines, missing: [], note: offline ? "Local LLM: skills picked by keyword match from installed skills (no Claude call)." : "Skills picked by keyword match (no extra model call)." });
+    const picked: SkillMap = Object.fromEntries(keywordLines.map((l) => [l.agent, l.skills]));
     sessions.upsert({ id: conversationId, skills: picked });
     return onlyInstalled(picked, installed);
   }
+  // Nothing matched: ask the model scout in the background, off the reply's critical path. Its picks (and
+  // download suggestions) apply from the next message.
+  void modelScout({ conversationId, prompt, workspace, roster, local, installed, customAgents, emit }).catch(() => {});
+  return {};
+}
+
+async function modelScout({ conversationId, prompt, workspace, roster, local, installed, customAgents, emit }: {
+  conversationId: string; prompt: string; workspace: string; roster: AgentKey[]; local: { name: string; description: string }[];
+  installed: Set<string>; customAgents: CustomAgent[]; emit: (e: UiEvent) => void;
+}): Promise<void> {
   let catalog: CatalogSkill[] = [];
   let note: string | undefined;
   try {
@@ -97,16 +108,12 @@ export async function prepareSkills({ conversationId, room, prompt, workspace, f
 
   let reply = "";
   try {
-    reply = await askScout(buildScoutPrompt(prompt, roster, [...pool.values()], loadSpec().skillScout, customAgents), workspace, signal);
+    reply = await askScout(buildScoutPrompt(prompt, roster, [...pool.values()], loadSpec().skillScout, customAgents), workspace);
   } catch {
     note = "The skill scout didn't answer, so agents run without extra skills this time.";
   }
-  if (signal?.aborted) return {};
   const lines = parseScoutReply(reply, roster, [...pool.keys()]);
   const missing = computeMissing(lines, catalog, installed);
-  emit({ type: "skills", lines, missing, note });
-
-  const picked: SkillMap = Object.fromEntries(lines.map((l) => [l.agent, l.skills]));
-  sessions.upsert({ id: conversationId, skills: picked });
-  return onlyInstalled(picked, installed);
+  emit({ type: "skills", lines, missing, note: note ?? "Picked in the background; these skills apply from your next message." });
+  sessions.upsert({ id: conversationId, skills: Object.fromEntries(lines.map((l) => [l.agent, l.skills])) });
 }

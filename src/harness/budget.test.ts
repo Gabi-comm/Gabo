@@ -130,3 +130,36 @@ describe("Local LLM slim profile", () => {
     expect(o.additionalDirectories).toEqual(["C:/Vault"]);
   });
 });
+
+describe("cache-friendly prompts and trimmed hand-offs", () => {
+  it("puts the per-chat skill list last in an agent's prompt", () => {
+    const o = buildOptions({ room: "library", workspace: path.resolve("/w"), spec, skillsByAgent: { tutor: ["unslop"] } });
+    const p = o.agents!.tutor.prompt;
+    expect(p.trim().endsWith("Load one with the Skill tool only when the task needs it.")).toBe(true);
+    expect(p.indexOf("Output budget")).toBeLessThan(p.indexOf("Skills picked for you"));
+  });
+  it("hands the next agent key points, not whole outputs", () => {
+    const w = workflowFor("library");
+    expect(w).toMatch(/at most three key points \(120 words per agent at most\), never its whole output/);
+  });
+});
+
+describe("parallel layers in Deep replies", () => {
+  it("team rooms run members in layers, with each room's own layers", () => {
+    expect(workflowFor("library")).toMatch(/called together in a single message/);
+    expect(workflowFor("library")).toMatch(/Layers: researcher, then tutor and planner together/);
+    expect(workflowFor("arena")).toMatch(/then believer and investor together, then skeptic/);
+    expect(workflowFor("hackathon")).toMatch(/Layers: planner, then designer and investor together/);
+    expect(workflowFor("laboratory", ["tutor", "researcher"])).toMatch(/run them in layers/);
+  });
+});
+
+describe("user hooks", () => {
+  it("are switched off in Gabo's sessions unless Gab turns them on; local runs keep their own settings", () => {
+    const off = buildOptions({ room: "home", workspace: path.resolve("/w"), spec, userHooks: false });
+    expect(off.settings).toEqual({ disableAllHooks: true });
+    expect(buildOptions({ room: "home", workspace: path.resolve("/w"), spec }).settings).toBeUndefined();
+    const local = buildOptions({ room: "home", workspace: path.resolve("/w"), spec, userHooks: false, local: { enabled: true, baseUrl: "http://127.0.0.1:11434", model: "qwen3:8b" } });
+    expect(local.settings).toMatchObject({ disableAllHooks: true, includeGitInstructions: false });
+  });
+});

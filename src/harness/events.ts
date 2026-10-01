@@ -22,7 +22,7 @@ export type UiEvent =
   | { type: "permission_request"; requestId: string; tool: string; summary: string; kind?: AskKind; questions?: Question[]; plan?: string }
   | { type: "permission_resolved"; requestId: string; decision: Decision; answers?: Record<string, string> }
   | { type: "skills"; lines: SkillLine[]; missing: SkillRec[]; note?: string }
-  | { type: "result"; ok: boolean; costUsd: number; inputTokens: number; outputTokens: number; durationMs: number; tokens?: TokenCounts; turnTokens?: TokenCounts }
+  | { type: "result"; ok: boolean; costUsd: number; inputTokens: number; outputTokens: number; durationMs: number; tokens?: TokenCounts; turnTokens?: TokenCounts; contextTokens?: number }
   | { type: "error"; message: string; hint?: string }
   | { type: "notice"; text: string }
   | { type: "rate_limit"; info: Record<string, unknown> }
@@ -94,6 +94,8 @@ function resultText(content: unknown): string {
 export function createMapper(known: (id: unknown) => boolean = isAgentId) {
   const subagentByToolUse = new Map<string, AgentKey>();
   const streamedFor = new Set<string>();
+  // Prompt size of the lead's latest model call: the chat's context, re-read on every message.
+  let contextTokens = 0;
   const key = (parent: string | null | undefined) => parent ?? "main";
   const agentOf = (parent: string | null | undefined): AgentKey | null =>
     (parent && subagentByToolUse.get(parent)) || null;
@@ -131,6 +133,11 @@ export function createMapper(known: (id: unknown) => boolean = isAgentId) {
       }
       case "assistant": {
         const out: UiEvent[] = [];
+        if (!msg.parent_tool_use_id) {
+          const u = (msg.message as { usage?: { input_tokens?: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number } })?.usage;
+          const size = u ? (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0) : 0;
+          if (size) contextTokens = size;
+        }
         const k = key(msg.parent_tool_use_id);
         const streamed = streamedFor.delete(k);
         const agent = agentOf(msg.parent_tool_use_id);
@@ -190,6 +197,7 @@ export function createMapper(known: (id: unknown) => boolean = isAgentId) {
           inputTokens: usage.input_tokens ?? 0,
           outputTokens: usage.output_tokens ?? 0,
           durationMs: Number(msg.duration_ms ?? 0),
+          ...(contextTokens ? { contextTokens } : {}),
           // modelUsage: every model call (main loop, subagents, compaction), running total for the session.
           tokens: sumModelUsage(msg.modelUsage, Number(msg.total_cost_usd ?? 0)),
           // usage: this turn's main loop only. Used when there is no earlier total to subtract.

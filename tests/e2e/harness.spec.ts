@@ -40,12 +40,25 @@ test("keyboard only: send, answer the permission prompt with a number key, run f
 
 test("Workspace rooms: agents work as a team and each shows who it builds on", async ({ page }) => {
   await page.goto("/library");
-  await prompt(page).fill("teach me binary search");
+  await prompt(page).fill("teach me binary search --deep");
   await page.keyboard.press("Enter");
   await expect(page.getByText("Done. Fake run finished.")).toBeVisible({ timeout: 20_000 });
   const handoffs = page.getByTitle("Builds on what these teammates said");
   await expect(handoffs.first()).toContainText("← Researcher");
   await expect(handoffs).toHaveCount(3);
+});
+
+test("Workspace rooms: a short question gets a Quick team reply in one answer, shown as the agents' turns", async ({ page }) => {
+  await page.goto("/library");
+  await prompt(page).fill("what is a binary search?");
+  await page.keyboard.press("Enter");
+  await expect(page.getByText(/Quick reply \(short question\): the team answers together in one reply/)).toBeVisible();
+  await expect(page.getByText("Done. Fake run finished.")).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText("The Researcher opens.")).toBeVisible();
+  await expect(page.getByText("The Tutor answers and builds on it.")).toBeVisible();
+  await expect(page.getByTitle("Builds on what these teammates said")).toHaveCount(1);
+  await expect(page.getByTitle("Builds on what these teammates said")).toContainText("← Researcher");
+  await expect(page.getByText("### researcher")).toHaveCount(0);
 });
 
 test("Esc interrupts a running run", async ({ page }) => {
@@ -313,6 +326,23 @@ test("New Session under the prompt compacts a copy of the chat into a new chat t
   await page.goto(oldUrl);
   await expect(page.locator('ol[aria-live="polite"]').getByText("first chat about budgets").first()).toBeVisible();
   await expect(page.getByText(/Carried over/)).toHaveCount(0);
+});
+
+test("context guard: a huge chat warns above the prompt, shows its size, and asks before sending", async ({ page }) => {
+  await page.goto("/");
+  await prompt(page).fill("a huge chat");
+  await page.keyboard.press("Enter");
+  await expect(page.getByText("Done. Fake run finished.")).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText("480k context")).toBeVisible();
+  const guard = page.getByRole("status").filter({ hasText: "re-reads about" });
+  await expect(guard).toContainText("480k");
+  // Sending again asks first; Cancel starts a New Session instead.
+  const oldUrl = page.url();
+  page.once("dialog", (d) => { expect(d.message()).toContain("re-reads about 480k tokens"); void d.dismiss(); });
+  await prompt(page).fill("one more question");
+  await page.keyboard.press("Enter");
+  await expect(page).not.toHaveURL(oldUrl);
+  await expect(page.getByText(/Carried over from/)).toBeVisible();
 });
 
 test("status line: Shift+Tab cycles permission mode; model and effort reach the run", async ({ page }) => {
@@ -617,7 +647,7 @@ test("Laboratory: pick the team, their mascots load above the prompt, and they r
   await page.getByRole("button", { name: "Start with 3 agents" }).click();
   const team = page.getByRole("list", { name: "Your team" });
   for (const name of ["The Tutor", "Lab Owl", "The Caveman"]) await expect(team.getByRole("img", { name })).toBeVisible();
-  await page.locator("#prompt-input").fill("review my experiment plan");
+  await page.locator("#prompt-input").fill("review my experiment plan --deep");
   await page.keyboard.press("Enter");
   await expect(page.getByText("Lab Owl reporting.")).toBeVisible({ timeout: 20_000 });
   await expect(page.getByText("The Tutor reporting.")).toBeVisible();

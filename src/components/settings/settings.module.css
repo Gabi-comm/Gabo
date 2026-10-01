@@ -77,3 +77,6 @@
   .budget { grid-template-columns: 1fr; }
   .budgetModes { overflow-x: auto; }
 }
+
+.hooksToggle { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; font-size: 13px; margin-top: 4px; }
+.hooksToggle .muted { flex-basis: 100%; font-size: 12px; padding-left: 22px; }

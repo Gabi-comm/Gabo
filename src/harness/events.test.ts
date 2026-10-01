@@ -17,3 +17,20 @@ describe("agent hand-offs", () => {
     expect(call("t2", "tutor", "Hand-off\nFrom researcher: base case first.\nMake a study plan.")).toMatchObject({ agent: "tutor", from: ["researcher"] });
   });
 });
+
+describe("parallel agents in the transcript", () => {
+  it("keeps each agent's streamed text together when two agents run at once", async () => {
+    const { reduce, initialTranscript } = await import("@/components/cli/transcript");
+    let t = initialTranscript;
+    for (const a of [
+      { type: "agent_start", agent: "believer", toolUseId: "b", description: "case" },
+      { type: "agent_start", agent: "investor", toolUseId: "i", description: "money" },
+      { type: "text", delta: "Strong ", agent: "believer" },
+      { type: "text", delta: "Who pays? ", agent: "investor" },
+      { type: "text", delta: "case.", agent: "believer" },
+      { type: "text", delta: "Students.", agent: "investor" },
+    ] as const) t = reduce(t, a as never);
+    const texts = t.items.filter((i) => i.kind === "text").map((i) => (i as { text: string }).text);
+    expect(texts).toEqual(["Strong case.", "Who pays? Students."]);
+  });
+});

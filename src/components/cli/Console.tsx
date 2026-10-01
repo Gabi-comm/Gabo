@@ -16,6 +16,11 @@ import { AgentMascot, useAgentMeta } from "@/components/agents/registry";
 import type { AgentInfo } from "@/harness/agentMeta";
 
 type Meta = (id: AgentKey) => AgentInfo;
+
+/** Context guard thresholds: warn above the prompt, then ask before sending (docs/plan-faster-replies.md §2). */
+const CONTEXT_WARN = 150_000;
+const CONTEXT_CONFIRM = 400_000;
+const kTokens = (n: number) => (n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : `${Math.round(n / 1000)}k`);
 import { fetchClaudeInfo, toRunPrefs, useClaudeInfo, useLocalLlm, usePrefs, type ClaudeInfo, type Prefs } from "./useClaude";
 import { EFFORTS, MODES, MODE_LABELS, isMode, nextMode, type Mode } from "@/harness/controls";
 import { MAX_IMAGES, MAX_IMAGE_B64, type ImageAttachment } from "@/harness/images";
@@ -215,6 +220,11 @@ export function Console({ room, conversationId, sessionId, team, label, placehol
     if (!value && images.length === 0) return;
     if (value && !fromQueue) remember(value);
     if (t.running) { setQueue((q) => [...q, { text: value, images }]); return; }
+    // Context guard (docs/plan-faster-replies.md §2): a huge chat re-reads everything on every message.
+    if (!value.startsWith("/") && (t.context ?? 0) >= CONTEXT_CONFIRM && liveId) {
+      const ok = window.confirm(`This chat re-reads about ${kTokens(t.context!)} tokens on every message, so this reply alone costs that much. Send anyway?\n\nCancel starts a New Session instead: Gabo compacts this chat into a short summary and continues there.`);
+      if (!ok) { void newSession(); return; }
+    }
     if (images.length) { stick.current = true; await send(value, { prefs: toRunPrefs(prefs), images, team }); return; }
     stick.current = true;
     if (value.startsWith("/") && (await runSlash(value))) return;
@@ -293,6 +303,12 @@ export function Console({ room, conversationId, sessionId, team, label, placehol
       </div>
       <div className={styles.dock}>
         <TodoPanel todos={t.todos ?? []} />
+        {(t.context ?? 0) >= CONTEXT_WARN && liveId && !t.running && (
+          <div className={styles.contextGuard} role="status">
+            <span>This chat re-reads about <strong>{kTokens(t.context!)}</strong> tokens on every message. A New Session continues from a short summary and uses far fewer.</span>
+            <button type="button" onClick={newSession} disabled={compacting}>{compacting ? "Compacting…" : "New Session"}</button>
+          </div>
+        )}
         {prompt}
       </div>
     </div>
@@ -638,6 +654,7 @@ function StatusLine({ label, t, prefs, local, models, onMode, onModel, onEffort,
       <span>{label}</span>
       {cwd && <span title={t.cwd}>{cwd}</span>}
       {t.tokens > 0 && <span>{t.tokens >= 1000 ? `${(t.tokens / 1000).toFixed(1)}k` : t.tokens} tok</span>}
+      {(t.context ?? 0) > 0 && <span title="Tokens this chat re-reads on every message" data-heavy={(t.context ?? 0) >= CONTEXT_WARN}>{kTokens(t.context!)} context</span>}
       <span className={styles.statusEnd}>
         {newSession}
         <span className={styles.statusHint}>/ commands · Shift+Tab mode</span>

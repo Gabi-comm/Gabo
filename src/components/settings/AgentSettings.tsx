@@ -45,6 +45,7 @@ export function AgentSettings({ initialAgent }: { initialAgent?: string }) {
   const [model, setModel] = useState("");
   const [effort, setEffort] = useState("");
   const [budget, setBudget] = useState<Budget | null>(null);
+  const [hooks, setHooks] = useState<boolean | null>(null);
   const [status, setStatus] = useState<Status>({ kind: "idle" });
 
   const load = useCallback(async () => {
@@ -55,6 +56,7 @@ export function AgentSettings({ initialAgent }: { initialAgent?: string }) {
       setRows(await res.json());
       const b = await fetch("/api/budget", { cache: "no-store" }).then((r) => r.json()).catch(() => null);
       if (b?.mode) setBudget(b.mode);
+      if (typeof b?.hooks === "boolean") setHooks(b.hooks);
     } catch (e) {
       setLoadError(e instanceof Error ? e.message : String(e));
     }
@@ -196,6 +198,21 @@ export function AgentSettings({ initialAgent }: { initialAgent?: string }) {
           ))}
         </div>
         <p className={styles.hint}>{BUDGETS.find((b) => b.id === budget)?.note ?? "Loading…"}</p>
+        <label className={styles.hooksToggle}>
+          <input
+            type="checkbox"
+            checked={!!hooks}
+            disabled={hooks === null}
+            onChange={async (e) => {
+              const on = e.target.checked;
+              setHooks(on);
+              const res = await fetch("/api/budget", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ hooks: on }) }).catch(() => null);
+              if (!res?.ok) setHooks(!on);
+            }}
+          />
+          Run my Claude Code hooks in Gabo
+          <span className={styles.muted}>Off is faster and uses fewer tokens: your plugins&apos; hooks added about 4–5 s to every session start and inject extra text into every chat. Gabo&apos;s own safety checks run either way.</span>
+        </label>
       </section>
 
       <div className={styles.layout}>

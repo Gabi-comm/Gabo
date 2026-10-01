@@ -14,6 +14,8 @@ import type { RunPrefs } from "./controls";
 import { isLocalOn, localEnv, type LocalLlmConfig } from "./localLlm";
 import { blockedTools, leadDefaults, profileFor, type BudgetMode } from "./budget";
 import { isTeamRoom } from "./rooms";
+import { WarmPool } from "./warmPool";
+import type { Tier } from "./router";
 import { summarizeTool } from "./events";
 import { QUICK_AGENTS, arenaSizeGuard, detectPython, ensureIdeaArena, withIdeaRubric } from "./arena";
 
@@ -34,12 +36,13 @@ function agentPrompt(id: AgentKey, spec: ParsedSpec, overrides: Overrides, custo
     parts = [`You are ${custom.name}, an agent Gab made. Your role:`, custom.prompt];
     if (custom.goal) parts.push(`Gab's added goal for you: ${custom.goal}`);
   }
+  // Stable text first and the per-chat skill list last, so the prompt cache reuses the most (plan-faster-replies §5).
+  parts.push(`Output budget: at most ${words} words, in the sections your role asks for. The lead hands your key points to the next agent, so don't restate the task or repeat what others said.`);
+  if (teamRoom) parts.push(TEAMMATE);
   // The server-side scout already applied the spec's skill rule; agents only get the result (no repo browsing).
   parts.push(skills.length
     ? `Skills picked for you: ${skills.join(", ")}. Load one with the Skill tool only when the task needs it.`
     : "No extra skills were picked for this task.");
-  parts.push(`Output budget: at most ${words} words, in the sections your role asks for. The lead passes your output on as-is, so don't restate the task or repeat what others said.`);
-  if (teamRoom) parts.push(TEAMMATE);
   return parts.join("\n\n");
 }
 
@@ -77,6 +80,10 @@ export interface BuildOptionsInput {
   localSlim?: LocalSlim;
   /** Folders besides the workspace the agents may use (e.g. the Obsidian vault). */
   extraRoots?: string[];
+  /** Router tier for Workspace rooms (src/harness/router.ts). Set: the lead knows the tier rules. */
+  tier?: Tier;
+  /** Run the user's own Claude Code hooks (plugins). Off: faster start and fewer injected tokens. */
+  userHooks?: boolean;
 }
 
 export interface LocalSlim { skills: string[]; blockedMcp: string[] }
@@ -86,7 +93,7 @@ export const LOCAL_TOOLS = ["Read", "Write", "Edit", "Glob", "Grep", "Bash", "Sk
 const LOCAL_NOTE = "You run on a small local model. Keep replies short. Use one agent at a time and only when needed; do not run the idea-arena tournament. Load a skill with the Skill tool only when the task needs it.";
 
 /** Everything a room run passes to query(), minus the live callbacks. */
-export function buildOptions({ room, workspace, spec, sessionId, skillsByAgent = {}, team, customAgents = [], extraWorkflow, overrides = {}, prefs = {}, mcpServers, local, budget = "balanced", env: backendEnv, localSlim, extraRoots = [] }: BuildOptionsInput): Options {
+export function buildOptions({ room, workspace, spec, sessionId, skillsByAgent = {}, team, customAgents = [], extraWorkflow, overrides = {}, prefs = {}, mcpServers, local, budget = "balanced", env: backendEnv, localSlim, extraRoots = [], tier, userHooks = true }: BuildOptionsInput): Options {
   const localOn = isLocalOn(local);
   const lead = leadDefaults(budget);
   const agents: Record<string, AgentDefinition> = {};
@@ -105,6 +112,7 @@ export function buildOptions({ room, workspace, spec, sessionId, skillsByAgent =
       ...(blocked ? { disallowedTools: blocked } : {}),
     };
   }
+  const teamIds = Object.keys(agents);
   let env: Record<string, string | undefined>;
   if (backendEnv) env = backendEnv;
   else {
@@ -131,16 +139,17 @@ export function buildOptions({ room, workspace, spec, sessionId, skillsByAgent =
       tools: room === "home" ? LOCAL_TOOLS : [...LOCAL_TOOLS, "Agent"],
       strictMcpConfig: true,
       // Instructions a small model tends to read back to the user instead of following.
-      settings: { includeGitInstructions: false, includeCoAuthoredBy: false, attribution: { commit: "", pr: "" }, disableClaudeAiConnectors: true },
+      settings: { includeGitInstructions: false, includeCoAuthoredBy: false, attribution: { commit: "", pr: "" }, disableClaudeAiConnectors: true, ...(userHooks ? {} : { disableAllHooks: true }) },
       skills: slim.skills,
       ...(slim.blockedMcp.length ? { disallowedTools: slim.blockedMcp } : {}),
-    } : {}),
+    } : !userHooks ? { settings: { disableAllHooks: true } } : {}),
     model: localOn ? local.model : prefs.model || lead.model,
+    // Same effort on every tier: changing it between messages would break the prompt cache.
     effort: prefs.effort || lead.effort,
     systemPrompt: {
       type: "preset",
       preset: "claude_code",
-      append: [workflowFor(room, Object.keys(agents)), slim ? LOCAL_NOTE : undefined, extraWorkflow, `The user is Gab. Workspace: ${workspace}`].filter(Boolean).join("\n"),
+      append: [workflowFor(room, teamIds, !!tier && !slim), slim ? LOCAL_NOTE : undefined, extraWorkflow, `The user is Gab. Workspace: ${workspace}`].filter(Boolean).join("\n"),
     },
   };
 }
@@ -194,6 +203,17 @@ const g = globalThis as unknown as { __gaboRules?: Map<string, Set<string>>; __g
 const rulesByConversation = (g.__gaboRules ??= new Map());
 /** The running query per chat, so the status line can switch mode or model mid-run like the CLI. */
 export const liveQueries = (g.__gaboLive ??= new Map<string, Query>());
+/** Warm sessions: each chat's Claude Code process stays alive between messages (plan-faster-replies §7). */
+const gp = globalThis as unknown as { __gaboWarm?: WarmPool };
+export function warmPool(): WarmPool {
+  return (gp.__gaboWarm ??= new WarmPool(
+    (params) => sdkQuery!(params),
+    10 * 60_000,
+    3,
+    process.env.GABO_PREWARM === "0" ? undefined : async (params) => (await import("@anthropic-ai/claude-agent-sdk")).prewarm(params),
+  ));
+}
+let sdkQuery: typeof import("@anthropic-ai/claude-agent-sdk").query | null = null;
 
 export interface RunInput {
   runId: string;
@@ -214,6 +234,8 @@ export interface RunInput {
   env?: Record<string, string | undefined>;
   localSlim?: LocalSlim;
   extraRoots?: string[];
+  tier?: Tier;
+  userHooks?: boolean;
   /** Gab confirmed a full (more than --quick) arena run. */
   fullArena?: boolean;
   /** Model, permission mode and effort picked in the status line. */
@@ -238,7 +260,7 @@ export function preToolUseReason(tool: string, toolInput: Record<string, unknown
 const LOGIN_HINT = "Open a terminal, run `claude`, then `/login` with your Pro/Max account.";
 
 export async function runRoom(input: RunInput): Promise<void> {
-  const { runId, conversationId, room, prompt, workspace, sessionId, skillsByAgent, fullArena = false, prefs, images = [], mcpServers, systemNote, team, customAgents = [], local, budget, env, localSlim, extraRoots = [], emit, signal } = input;
+  const { runId, conversationId, room, prompt, workspace, sessionId, skillsByAgent, fullArena = false, prefs, images = [], mcpServers, systemNote, team, customAgents = [], local, budget, env, localSlim, extraRoots = [], tier, userHooks, emit, signal } = input;
   // Esc can land while setup awaits (skill scout, SDK import, Python check); an abort before the
   // listener below is attached would otherwise be missed and the run would go on unseen.
   const stopped = () => {
@@ -281,23 +303,17 @@ export async function runRoom(input: RunInput): Promise<void> {
       ...(req.kind ? { kind: req.kind } : {}), ...(req.questions ? { questions: req.questions } : {}), ...(req.kind === "plan" ? { plan: req.plan ?? "" } : {}),
     });
 
-  const options: Options = {
-    ...buildOptions({ room, workspace, spec, sessionId, skillsByAgent, extraWorkflow: [extraWorkflow, systemNote].filter(Boolean).join("\n") || undefined, overrides: loadOverrides(), prefs, mcpServers, team, customAgents, local, budget, env, localSlim, extraRoots }),
-    abortController,
-    canUseTool: makeCanUseTool({ runId, workspace, extraRoots, broker: defaultBroker, sessionRules, onAsk }),
-    hooks: {
-      // Reads outside the workspace are auto-allowed by the CLI and never reach canUseTool; lock them here.
-      PreToolUse: [{
-        hooks: [async (hookInput) => {
-          const h = hookInput as { tool_name?: string; tool_input?: Record<string, unknown> };
-          const reason = preToolUseReason(String(h.tool_name), h.tool_input ?? {}, workspace, fullArena, extraRoots);
-          return reason
-            ? { hookSpecificOutput: { hookEventName: "PreToolUse" as const, permissionDecision: "deny" as const, permissionDecisionReason: reason } }
-            : {};
-        }],
-      }],
-    },
+  const base = buildOptions({ room, workspace, spec, sessionId, skillsByAgent, extraWorkflow: [extraWorkflow, systemNote].filter(Boolean).join("\n") || undefined, overrides: loadOverrides(), prefs, mcpServers, team, customAgents, local, budget, env, localSlim, extraRoots, tier, userHooks });
+  const canUseTool = makeCanUseTool({ runId, workspace, extraRoots, broker: defaultBroker, sessionRules, onAsk });
+  // Reads outside the workspace are auto-allowed by the CLI and never reach canUseTool; lock them here.
+  const preToolUse = async (hookInput: unknown) => {
+    const h = hookInput as { tool_name?: string; tool_input?: Record<string, unknown> };
+    const reason = preToolUseReason(String(h.tool_name), h.tool_input ?? {}, workspace, fullArena, extraRoots);
+    return reason
+      ? { hookSpecificOutput: { hookEventName: "PreToolUse" as const, permissionDecision: "deny" as const, permissionDecisionReason: reason } }
+      : {};
   };
+  const options: Options = { ...base, abortController, canUseTool, hooks: { PreToolUse: [{ hooks: [preToolUse] }] } };
 
   // Subagents on this run's roster (built-in or custom) get their own mascot in the transcript.
   const roster = new Set<string>(Object.keys(options.agents ?? {}));
@@ -307,6 +323,23 @@ export async function runRoom(input: RunInput): Promise<void> {
     async function* withImages(): AsyncGenerator<SDKUserMessage> {
       const content = userContent(prompt, images).filter((b) => b.type !== "text" || b.text.trim() !== "");
       yield { type: "user", message: { role: "user", content: content as never }, parent_tool_use_id: null, session_id: sessionId ?? "" } as SDKUserMessage;
+    }
+    // Warm session: reuse the chat's live process (the Arena swaps its rubric file per run, so it stays one-shot).
+    if (!input.queryImpl && room !== "arena" && process.env.GABO_WARM !== "0") {
+      sdkQuery = query;
+      const pool = warmPool();
+      const known = pool.info(conversationId);
+      // A reused session sends no init message: re-announce it so usage and the status line stay right.
+      if (known?.sessionId) emit({ type: "session", sessionId: known.sessionId, model: known.model ?? base.model ?? "", cwd: workspace });
+      const content = images.length ? userContent(prompt, images).filter((b) => b.type !== "text" || b.text.trim() !== "") : prompt;
+      const message = { type: "user", message: { role: "user", content: content as never }, parent_tool_use_id: null, session_id: "" } as SDKUserMessage;
+      const onLive = () => { const q = pool.live(conversationId); if (q) liveQueries.set(conversationId, q); };
+      await pool.runTurn({
+        conversationId, options: base, message, signal,
+        handlers: { canUseTool, preToolUse },
+        onMessage: (msg) => { onLive(); for (const e of map(msg as never)) emit(e); },
+      });
+      return;
     }
     const live = query({ prompt: images.length ? withImages() : prompt, options });
     liveQueries.set(conversationId, live);
@@ -350,9 +383,10 @@ export interface FakeRunInput {
   customAgents?: CustomAgent[];
   local?: LocalLlmConfig;
   budget?: BudgetMode;
+  tier?: Tier;
 }
 
-export async function fakeRun({ room, prompt, emit, signal, delayMs = 120, ask, prefs = {}, images = [], team, customAgents = [], local, budget = "balanced" }: FakeRunInput): Promise<void> {
+export async function fakeRun({ room, prompt, emit, signal, delayMs = 120, ask, prefs = {}, images = [], team, customAgents = [], local, budget = "balanced", tier }: FakeRunInput): Promise<void> {
   const wait = () => new Promise((r) => setTimeout(r, delayMs));
   const step = async (e: UiEvent) => {
     if (signal.aborted) throw new Error("aborted");
@@ -400,6 +434,17 @@ export async function fakeRun({ room, prompt, emit, signal, delayMs = 120, ask, 
       if (decision === "allow_session") await step({ type: "mode", mode: "acceptEdits" });
       await step({ type: "notice", text: decision === "deny" ? "Keeps planning." : "Plan approved." });
     }
+    if (tier && tier !== "deep" && isTeamRoom(room)) {
+      // Team in one reply: the lead writes two members' turns; the route turns them into agent blocks.
+      const pair = roster.filter((a) => a !== "caveman").slice(0, 2);
+      const script = [
+        ...pair.flatMap((a, i) => [`### ${a}\n`, `${metaOf(a, customAgents).name} ${i === 0 ? "opens" : "answers and builds on it"}.\n`]),
+        "### Recap\n", "Done. Fake run finished.",
+      ];
+      for (const piece of script) await step({ type: "text", delta: piece, agent: null });
+      emit({ type: "result", ok: true, costUsd: 0, inputTokens: 600, outputTokens: 120, durationMs: 900 });
+      return;
+    }
     for (const [i, agent] of roster.entries()) {
       const id = `a${i}`;
       const meta = metaOf(agent, customAgents);
@@ -410,7 +455,8 @@ export async function fakeRun({ room, prompt, emit, signal, delayMs = 120, ask, 
       await step({ type: "agent_stop", agent, toolUseId: id, ok: true });
     }
     for (const word of "Done. Fake run finished.".split(/(?<= )/)) await step({ type: "text", delta: word, agent: null });
-    emit({ type: "result", ok: true, costUsd: 0, inputTokens: 1200, outputTokens: 340, durationMs: 1800 });
+    // "huge chat" in the prompt simulates a long conversation, for the context guard's tests.
+    emit({ type: "result", ok: true, costUsd: 0, inputTokens: 1200, outputTokens: 340, durationMs: 1800, contextTokens: /huge chat/i.test(prompt) ? 480_000 : 9_000 });
   } catch {
     /* aborted */
   } finally {

@@ -108,6 +108,14 @@ describe("events mapper", () => {
     expect(r).toMatchObject({ turnTokens: { input: 10, output: 5, cacheRead: 0, cacheWrite: 0 } });
   });
 
+  it("reports the lead's last prompt size as the chat's context (subagent calls don't count)", () => {
+    const map = createMapper();
+    map({ type: "assistant", parent_tool_use_id: null, message: { content: [], usage: { input_tokens: 5, cache_read_input_tokens: 200_000, cache_creation_input_tokens: 3000 } } } as never);
+    map({ type: "assistant", parent_tool_use_id: "t1", message: { content: [], usage: { input_tokens: 9_000 } } } as never);
+    const [r] = map({ type: "result", subtype: "success", total_cost_usd: 0, duration_ms: 1, usage: {} } as never);
+    expect(r).toMatchObject({ contextTokens: 203_005 });
+  });
+
   it("totals every model (subagents included) with cache tokens from modelUsage", () => {
     const [r] = createMapper()({ type: "result", subtype: "success", total_cost_usd: 1.5, duration_ms: 1,
       usage: { input_tokens: 6, output_tokens: 2032, cache_read_input_tokens: 780000 },

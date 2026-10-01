@@ -2,6 +2,7 @@
 import { isAgentId } from "./agents";
 import { summarizeTool } from "./events";
 import type { Item } from "@/components/cli/transcript";
+import { TIER_TAG } from "./router";
 
 type Block = { type: string; [k: string]: unknown };
 interface HistoryMessage {
@@ -30,6 +31,7 @@ function resultText(content: unknown): string {
  * local command output (CLI bookkeeping) removed. Empty string = nothing to show.
  */
 export function cleanUserText(raw: string): string {
+  raw = raw.replace(TIER_TAG, "");
   const name = /<command-name>([\s\S]*?)<\/command-name>/.exec(raw)?.[1]?.trim();
   if (name) {
     const args = /<command-args>([\s\S]*?)<\/command-args>/.exec(raw)?.[1]?.trim();

@@ -24,6 +24,13 @@ It runs on the AI account you connect: a **Claude**, **OpenAI** or **Gemini** AP
   - **Laboratory** (you pick the team)
 
   In every room, agents answer each other's points and pass work along, and the chat shows who builds on whom.
+- **Team size that fits the prompt:** a router (rules on your prompt, no model call) picks a tier.
+  - **Quick:** short questions. The team answers together in one reply.
+  - **Standard:** regular tasks. Like Quick, with at most one real agent when a role needs tools.
+  - **Deep:** build work, long tasks, the Arena tournament. Real agents, with independent ones running in parallel.
+
+  A team-in-one-reply answer used about half the tokens of a real-agent run in testing, and showed its first words about
+  5 s sooner. Add `--deep` or `--lite` to a message to choose the tier yourself.
 - **Your own agents:** describe an agent and generate its costume and background, or pick each part yourself.
 - **CLI-style console:**
   - permission prompts and plan approval
@@ -34,6 +41,7 @@ It runs on the AI account you connect: a **Claude**, **OpenAI** or **Gemini** AP
   - a todo list and edit diffs
   - message queueing and Esc to stop
   - **New Session**, which runs `/compact` on a copy of the chat and continues in a new one
+  - a **context guard**: the status line shows how much the chat re-reads per message, warns above 150k tokens and asks before sending above 400k
 - **History and pins:** every session, from the app and from the terminal, resumable.
 - **Connect any AI:**
   - Claude with an API key, natively
@@ -46,7 +54,15 @@ It runs on the AI account you connect: a **Claude**, **OpenAI** or **Gemini** AP
   - skills picked offline
   - plugins you choose: GitHub, Notion, Obsidian, or any MCP server
 - **Token budget:** recommended model, effort, tools and output length per agent, in Economy, Balanced or Max mode. See [docs/token-budget.md](docs/token-budget.md).
-- **Status page:** usage, connectivity, MCP servers, plugins and versions.
+- **Fast replies:**
+  - each chat keeps its agent process warm between messages
+  - a spare process waits for new chats
+  - your plugins' hooks are off inside Gabo by default, which saves about 4–5 s per session (they can be switched back on)
+
+  Measured: messages went from 8–9 s to about 3 s.
+- **Status page:**
+  - **Analytics** for the last 7 days: tokens per day split into fresh input, cache writes, cache reads and output; the change from last week; reply speed; top room and model
+  - plan usage, connectivity, MCP servers, plugins and versions
 
 ## Requirements
 
@@ -79,12 +95,12 @@ You can change the connection any time under **Connect AI** in the sidebar.
 | Where | What |
 | --- | --- |
 | **Home** | A normal single-agent session. It answers directly and calls the Caveman only when asked. |
-| **Workspace → Library / Arena / Hackathon / Laboratory** | Team rooms: the lead picks the fitting agents for your prompt and runs them in order, with hand-offs. |
+| **Workspace → Library / Arena / Hackathon / Laboratory** | Team rooms: the router sizes the team (Quick, Standard or Deep) and the agents work with hand-offs. Add `--deep` for real agents or `--lite` for a quick team reply. |
 | **Agents** | Every agent on its stage. Open one for a solo chat. |
-| **Settings** | Edit each agent's role and goal, pick its model and effort, set the token budget, and create your own agents. |
+| **Settings** | Edit each agent's role and goal, pick its model and effort, set the token budget, choose whether your Claude Code hooks run, and create your own agents. |
 | **Plugins** | Let the agents consult other AIs (ChatGPT, Gemini, OpenClaw, Hermes or any OpenAI-compatible server), and see your installed plugins. |
 | **Local LLM** | Ollama setup, model preparation and tests, readiness, and the plugins the local model may use. |
-| **Status** | Connection, usage, connectivity, MCP servers and versions. |
+| **Status** | Analytics (tokens per day and reply speed), connection, plan usage, connectivity, MCP servers and versions. |
 
 The full feature and command reference is in [document.md](document.md).
 
@@ -111,7 +127,8 @@ The full feature and command reference is in [document.md](document.md).
 src/
   app/            Next.js pages and API routes (run, connect, translate, local-llm, connectors, …)
   components/     UI: console, shell, rooms, mascots, settings, connect, local LLM
-  harness/        The engine, no React: agents, rooms, runner, events, budget, translator, connectors, skills
+  harness/        The engine, no React: agents, rooms, router, runner, warm session pool, events, budget,
+                  translator, connectors, skills, usage analytics
   server/         Server-only stores and checks: sessions, keys, connection, connectors, usage, status
 docs/             Spec, plans and decisions (spec.md is the binding spec for agent roles)
 config/           Agent overrides and custom agents (tracked)
@@ -126,3 +143,4 @@ tests/e2e/        Playwright tests
 - [docs/token-budget.md](docs/token-budget.md): why each agent runs on the model it does
 - [docs/plan-local-llm-tools.md](docs/plan-local-llm-tools.md): Local LLM skills and plugins, with measurements
 - [docs/plan-token-reduction.md](docs/plan-token-reduction.md): research behind the token savings
+- [docs/plan-faster-replies.md](docs/plan-faster-replies.md): the router, team in one reply, warm sessions and context guard, with measurements

@@ -1,5 +1,8 @@
 # Plan: fewer tokens and faster replies (2026-10-01)
 
+> **Status: built (2026-10-01).** All seven changes are in the app, plus one found while measuring: user hooks off
+> by default. Results are at the end.
+
 Gab's goals, both required: **use fewer tokens** and **reply faster**, without worse answers. This builds on
 [plan-token-reduction.md](plan-token-reduction.md), which is already applied (per-agent models, output budgets, no
 skill preload, slim Local LLM prompt). Every change below is scored on both goals. Changes that only speed things up
@@ -137,3 +140,39 @@ shows tokens per day; add time to first token and total time per run.
 - Semantic caching: [arXiv 2411.05276](https://arxiv.org/abs/2411.05276)
 - Ollama: [FAQ (keep-alive)](https://ollama.readthedocs.io/en/faq/), [KV-cache quantization](https://smcleod.net/2024/12/bringing-k/v-context-quantisation-to-ollama/)
 - SDK `prewarm()` / `startup()`: `node_modules/@anthropic-ai/claude-agent-sdk/sdk.d.ts` (alpha)
+
+## What was built, and what it measured
+
+| # | Change | Where |
+| --- | --- | --- |
+| 0 | Reply speed logged per run (time to first words, total) and shown in Status → Analytics | `src/app/api/run/route.ts`, `src/harness/usage.ts` |
+| 1 | Router (`src/harness/router.ts`) + team in one reply; the lead's `### <agent id>` turns become agent blocks (`src/harness/personaSplit.ts`); `--deep` / `--lite` | rooms, runner, route |
+| 1b | **Cache-safe tiers:** all tier rules sit once in the system prompt and the tier rides on the message as `[Tier: …]`. Switching tiers never changes the system prompt, tool list or effort, which would break the prompt cache. | `tierRules`, `tierTag` |
+| 2 | Context guard: status-line size, warning at 150k, confirm at 400k | `Console.tsx`, `events.ts` (lead's last prompt size) |
+| 3 | Hand-offs carry the "For the next agent" line and at most 3 key points (120 words per agent) | `rooms.ts` |
+| 4 | Keyword-first skill scout; the model scout runs in the background only when keywords find nothing | `src/server/skills.ts` |
+| 5 | Agent prompts: stable text first, the per-chat skill list last | `runner.ts` |
+| 6 | Deep tier runs agents in layers (parallel Agent calls) with per-room layers; parallel agents' text stays in their own blocks | `rooms.ts`, `transcript.ts` |
+| 7 | Warm pool (one live session per chat, 10 min idle, max 3) + a prewarmed spare claimed by new chats | `src/harness/warmPool.ts` |
+| + | **User hooks off by default** (Settings → Token budget); Gabo's own safety hook still runs (verified) | `budget.ts`, runner |
+
+### Measured live on this laptop (Haiku, Home, "reply with one word")
+
+| | Message 1 (new chat) | Message 2 (follow-up) | New chat (spare) | Prompt per call |
+| --- | --- | --- | --- | --- |
+| Before | 9.3 s | 7.8 s | 8.6 s | about 33k tokens |
+| After | **3.3 s** | **4.3 s** | **2.8 s** | **about 27k tokens** |
+
+Raw SDK timing explains most of it: with the user's plugin hooks, Claude Code took 5.9 s to start and 7.3 s to the first
+token; with hooks off, 1.3 s and 2.4 s (API time was about 2 s either way).
+
+### Team in one reply vs real agents (Library, Sonnet lead, same task)
+
+| | Tokens | First words | Done |
+| --- | --- | --- | --- |
+| Team in one reply (2 written turns + recap) | **39.8k** | **3.1 s** | 8.4 s |
+| Deep (1 real agent) | 75.4k | 8.5 s | 8.5 s |
+
+That's 47% fewer tokens against a Deep run that used only one agent. Runs with 2–3 real agents open more contexts, so the
+saving grows.
+
