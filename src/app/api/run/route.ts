@@ -12,7 +12,7 @@ import { loadProviders } from "@/server/providers";
 import { loadCustomAgents } from "@/server/customAgents";
 import { loadLocal, modelDetails, prepareModel, saveLocal } from "@/server/localLlm";
 import { loadBudget } from "@/server/budget";
-import { appendUsage, recordRateLimit } from "@/server/usageLog";
+import { logRun, recordRateLimit } from "@/server/usageLog";
 import { FAKE, getWorkspace, sessions, validateWorkspace } from "@/server/config";
 import { prepareSkills } from "@/server/skills";
 import { makeHeaderFilter } from "@/harness/localFilter";
@@ -69,6 +69,7 @@ export async function POST(req: Request) {
     async start(controller) {
       let closed = false;
       let runModel = local.enabled ? local.model : "";
+      let runSession: string | null = null;
       const headerFilter = backend.kind === "local" ? makeHeaderFilter() : null;
       const emit = (raw: UiEvent) => {
         if (closed) return;
@@ -78,12 +79,17 @@ export async function POST(req: Request) {
       const send = (e: UiEvent) => {
         if (e.type === "session") {
           runModel = e.model;
+          runSession = e.sessionId;
           if (!FAKE) sessions.upsert({ id: conversationId, sdkSessionId: e.sessionId });
         }
         // Usage for the Status page: plan meters from Claude Code, and a line per finished run.
         if (e.type === "rate_limit") { recordRateLimit(e.info); return; }
         if (e.type === "result") {
-          appendUsage({ at: Date.now(), room, model: runModel, inputTokens: e.inputTokens, outputTokens: e.outputTokens, costUsd: e.costUsd });
+          logRun({
+            at: Date.now(), room, model: runModel, sessionId: FAKE ? null : runSession, resumed: !!existing?.sdkSessionId,
+            total: e.tokens,
+            turn: e.turnTokens ?? { input: e.inputTokens, output: e.outputTokens, cacheRead: 0, cacheWrite: 0, costUsd: e.costUsd },
+          });
         }
         try { controller.enqueue(encoder.encode(`data: ${JSON.stringify(e)}\n\n`)); } catch { closed = true; }
       };

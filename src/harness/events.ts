@@ -22,7 +22,7 @@ export type UiEvent =
   | { type: "permission_request"; requestId: string; tool: string; summary: string; kind?: AskKind; questions?: Question[]; plan?: string }
   | { type: "permission_resolved"; requestId: string; decision: Decision; answers?: Record<string, string> }
   | { type: "skills"; lines: SkillLine[]; missing: SkillRec[]; note?: string }
-  | { type: "result"; ok: boolean; costUsd: number; inputTokens: number; outputTokens: number; durationMs: number }
+  | { type: "result"; ok: boolean; costUsd: number; inputTokens: number; outputTokens: number; durationMs: number; tokens?: TokenCounts; turnTokens?: TokenCounts }
   | { type: "error"; message: string; hint?: string }
   | { type: "notice"; text: string }
   | { type: "rate_limit"; info: Record<string, unknown> }
@@ -30,6 +30,20 @@ export type UiEvent =
   | { type: "done" };
 
 type Block = { type: string; [k: string]: unknown };
+
+export interface TokenCounts { input: number; output: number; cacheRead: number; cacheWrite: number; costUsd: number }
+
+function sumModelUsage(raw: unknown, costUsd: number): TokenCounts | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const t: TokenCounts = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, costUsd };
+  for (const m of Object.values(raw as Record<string, Record<string, number>>)) {
+    t.input += Number(m.inputTokens ?? 0);
+    t.output += Number(m.outputTokens ?? 0);
+    t.cacheRead += Number(m.cacheReadInputTokens ?? 0);
+    t.cacheWrite += Number(m.cacheCreationInputTokens ?? 0);
+  }
+  return t;
+}
 type Msg = { type: string; subtype?: string; parent_tool_use_id?: string | null; [k: string]: unknown };
 
 const PREVIEW_LINES = 4;
@@ -168,7 +182,7 @@ export function createMapper(known: (id: unknown) => boolean = isAgentId) {
         return info && typeof info === "object" ? [{ type: "rate_limit", info: info as Record<string, unknown> }] : [];
       }
       case "result": {
-        const usage = (msg.usage ?? {}) as { input_tokens?: number; output_tokens?: number };
+        const usage = (msg.usage ?? {}) as { input_tokens?: number; output_tokens?: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number };
         return [{
           type: "result",
           ok: msg.subtype === "success",
@@ -176,6 +190,13 @@ export function createMapper(known: (id: unknown) => boolean = isAgentId) {
           inputTokens: usage.input_tokens ?? 0,
           outputTokens: usage.output_tokens ?? 0,
           durationMs: Number(msg.duration_ms ?? 0),
+          // modelUsage: every model call (main loop, subagents, compaction), running total for the session.
+          tokens: sumModelUsage(msg.modelUsage, Number(msg.total_cost_usd ?? 0)),
+          // usage: this turn's main loop only. Used when there is no earlier total to subtract.
+          turnTokens: {
+            input: usage.input_tokens ?? 0, output: usage.output_tokens ?? 0,
+            cacheRead: usage.cache_read_input_tokens ?? 0, cacheWrite: usage.cache_creation_input_tokens ?? 0, costUsd: 0,
+          },
         }];
       }
       default:

@@ -9,7 +9,7 @@ import { FAKE, getWorkspace } from "./config";
 import { loadProviders } from "./providers";
 import { loadLocal } from "./localLlm";
 import { activeBackend } from "./backend";
-import { planUsage, readRateLimits, usageSummary, type RateLimit } from "./usageLog";
+import { planUsage, readRateLimits, usageAnalytics, usageSummary, type RateLimit } from "./usageLog";
 import { isLocalOn } from "@/harness/localLlm";
 import type { PlanUsage } from "@/harness/usage";
 
@@ -28,6 +28,7 @@ export interface Status {
     plan: { text: string; meters: PlanUsage[] } | null;
     rateLimits: RateLimit[];
     summary: ReturnType<typeof usageSummary>;
+    analytics: ReturnType<typeof usageAnalytics>;
   };
 }
 
@@ -66,7 +67,7 @@ const FAKE_STATUS: Status = {
   tools: { mcp: [{ name: "plugin:github:github", status: "connected" }, { name: "claude.ai Gmail", status: "needs-auth" }], plugins: ["superpowers", "github"], commands: 3, otherAis: [] },
   gabo: [{ name: "Workspace", ok: true, detail: "C:/fake/workspace" }, { name: "Python (Arena)", ok: true, detail: "python" }],
   backend: { kind: "subscription", detail: "Claude Pro" },
-  usage: { plan: null, rateLimits: [], summary: { today: { runs: 0, tokens: 0, costUsd: 0 }, week: { runs: 0, tokens: 0, costUsd: 0 }, byRoom: [], byModel: [] } },
+  usage: { plan: null, rateLimits: [], summary: { today: { runs: 0, tokens: 0, costUsd: 0 }, week: { runs: 0, tokens: 0, costUsd: 0 }, byRoom: [], byModel: [] }, analytics: usageAnalytics() },
 };
 
 /** Everything the CLI's /status shows, plus Gabo's own checks. Every part is independent: one failure never hides the rest. */
@@ -79,7 +80,7 @@ export async function getStatus(refresh = false): Promise<Status> {
     : active.kind === "none" ? { kind: "none", detail: "Not connected" }
     : { kind: "key", detail: active.label };
   if (FAKE) {
-    return { ...FAKE_STATUS, checkedAt: Date.now(), backend, usage: { plan: await planUsage(refresh), rateLimits: readRateLimits(), summary: usageSummary() } };
+    return { ...FAKE_STATUS, checkedAt: Date.now(), backend, usage: { plan: await planUsage(refresh), rateLimits: readRateLimits(), summary: usageSummary(), analytics: usageAnalytics() } };
   }
   const settings = readJson(path.join(os.homedir(), ".claude", "settings.json")) ?? {};
   const [cli, info, python, api, statusPage, plan] = await Promise.all([
@@ -124,6 +125,6 @@ export async function getStatus(refresh = false): Promise<Status> {
       { name: "Python (Arena)", ok: !!python, detail: python ?? "not found; the Arena needs Python 3.8+" },
     ],
     backend,
-    usage: { plan, rateLimits: readRateLimits(), summary: usageSummary() },
+    usage: { plan, rateLimits: readRateLimits(), summary: usageSummary(), analytics: usageAnalytics() },
   };
 }
