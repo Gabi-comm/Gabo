@@ -110,6 +110,9 @@ export interface RunUsageInput {
   resumed: boolean;
   total?: TokenCounts;
   turn: TokenCounts;
+  /** Time to the first words, and to the end of the run (ms). */
+  ttftMs?: number;
+  durationMs?: number;
 }
 
 /** Logs one finished run, as the change in its session's running total (see runUsage). */
@@ -122,6 +125,8 @@ export function logRun(input: RunUsageInput, file = USAGE_FILE, cursorsFile = CU
     at: input.at, room: input.room, model: input.model,
     inputTokens: used.input, outputTokens: used.output, cacheReadTokens: used.cacheRead, cacheWriteTokens: used.cacheWrite,
     costUsd: Math.round(used.costUsd * 1e6) / 1e6,
+    ...(input.ttftMs !== undefined ? { ttftMs: input.ttftMs } : {}),
+    ...(input.durationMs !== undefined ? { durationMs: input.durationMs } : {}),
   };
   appendUsage(rec, file);
   if (input.sessionId && input.total) {

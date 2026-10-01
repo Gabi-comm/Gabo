@@ -16,6 +16,8 @@ export interface UsageRecord {
   at: number; room: string; model: string; inputTokens: number; outputTokens: number; costUsd: number;
   /** Tokens re-read from the prompt cache, and written to it. Absent on lines logged before 2026-10-01. */
   cacheReadTokens?: number; cacheWriteTokens?: number;
+  /** Time to the first words and total run time, in ms (logged from 2026-10-01). */
+  ttftMs?: number; durationMs?: number;
 }
 export interface Totals { runs: number; tokens: number; costUsd: number }
 export interface Grouped extends Totals { key: string }
@@ -84,6 +86,8 @@ export interface WeeklyAnalytics {
   perRun: number;
   topRoom: Grouped | null;
   topModel: Grouped | null;
+  /** Average seconds to the first words and to the end, over runs that logged them; null when none did. */
+  speed: { firstWordsS: number; doneS: number; runs: number } | null;
 }
 
 const dayKey = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -132,6 +136,14 @@ export function weeklyAnalytics(recs: UsageRecord[], now = Date.now()): WeeklyAn
     perRun: runs ? Math.round(total / runs) : 0,
     topRoom: rooms[0] ?? null,
     topModel: models[0] ?? null,
+    speed: averageSpeed(week),
   };
 }
 
+function averageSpeed(recs: UsageRecord[]): WeeklyAnalytics["speed"] {
+  const timed = recs.filter((r) => typeof r.durationMs === "number");
+  if (!timed.length) return null;
+  const firsts = timed.filter((r) => typeof r.ttftMs === "number");
+  const avg = (ns: number[]) => Math.round((ns.reduce((a, b) => a + b, 0) / ns.length / 1000) * 10) / 10;
+  return { firstWordsS: firsts.length ? avg(firsts.map((r) => r.ttftMs!)) : 0, doneS: avg(timed.map((r) => r.durationMs!)), runs: timed.length };
+}

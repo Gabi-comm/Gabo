@@ -17,6 +17,7 @@ export interface WeeklyAnalytics {
   perRun: number;
   topRoom: { key: string; tokens: number; runs: number } | null;
   topModel: { key: string; tokens: number; runs: number } | null;
+  speed?: { firstWordsS: number; doneS: number; runs: number } | null;
 }
 
 type Part = "input" | "cacheWrite" | "cacheRead" | "output";
@@ -59,6 +60,11 @@ export function Analytics({ a }: { a: WeeklyAnalytics }) {
         <div><span className={styles.tileLabel}>Per day</span><strong>{fmt(a.perDay)}</strong><span className={styles.tileNote}>average</span></div>
         <div><span className={styles.tileLabel}>Per run</span><strong>{fmt(a.perRun)}</strong><span className={styles.tileNote}>{a.runs} run{a.runs === 1 ? "" : "s"}</span></div>
         <div><span className={styles.tileLabel}>Busiest day</span><strong>{a.busiest ? a.busiest.label : "—"}</strong><span className={styles.tileNote}>{a.busiest ? `${fmt(a.busiest.total)} tokens` : "nothing yet"}</span></div>
+        <div>
+          <span className={styles.tileLabel}>Reply speed</span>
+          <strong>{a.speed ? `${a.speed.doneS}s` : "—"}</strong>
+          <span className={styles.tileNote}>{a.speed ? `first words after ${a.speed.firstWordsS}s (avg of ${a.speed.runs})` : "logged from now on"}</span>
+        </div>
         <div><span className={styles.tileLabel}>API-equivalent</span><strong>${a.costUsd.toFixed(2)}</strong><span className={styles.tileNote}>on a plan, not billed per token</span></div>
       </div>
 

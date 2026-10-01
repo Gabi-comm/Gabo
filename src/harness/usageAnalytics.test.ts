@@ -48,6 +48,11 @@ describe("weekly analytics", () => {
     expect(a.perRun).toBe(Math.round(7300 / 4));
     expect(a.topRoom?.key).toBe("home");
   });
+  it("averages reply speed over the runs that logged it", () => {
+    const a = weeklyAnalytics([{ ...rec(0, 10), ttftMs: 2000, durationMs: 10000 }, { ...rec(1, 10), ttftMs: 4000, durationMs: 20000 }, rec(1, 10)], now);
+    expect(a.speed).toEqual({ firstWordsS: 3, doneS: 15, runs: 2 });
+    expect(weeklyAnalytics([rec(0, 10)], now).speed).toBeNull();
+  });
   it("is empty and has no comparison when nothing was logged", () => {
     const a = weeklyAnalytics([], now);
     expect(a.total).toBe(0);

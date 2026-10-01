@@ -70,6 +70,9 @@ export async function POST(req: Request) {
       let closed = false;
       let runModel = local.enabled ? local.model : "";
       let runSession: string | null = null;
+      // Reply speed for Status → Analytics: when the first words arrived, and when the run ended.
+      const runStart = Date.now();
+      let firstTokenAt = 0;
       const headerFilter = backend.kind === "local" ? makeHeaderFilter() : null;
       const emit = (raw: UiEvent) => {
         if (closed) return;
@@ -77,6 +80,7 @@ export async function POST(req: Request) {
         send(raw);
       };
       const send = (e: UiEvent) => {
+        if (!firstTokenAt && e.type === "text" && e.delta) firstTokenAt = Date.now();
         if (e.type === "session") {
           runModel = e.model;
           runSession = e.sessionId;
@@ -89,6 +93,8 @@ export async function POST(req: Request) {
             at: Date.now(), room, model: runModel, sessionId: FAKE ? null : runSession, resumed: !!existing?.sdkSessionId,
             total: e.tokens,
             turn: e.turnTokens ?? { input: e.inputTokens, output: e.outputTokens, cacheRead: 0, cacheWrite: 0, costUsd: e.costUsd },
+            durationMs: Date.now() - runStart,
+            ...(firstTokenAt ? { ttftMs: firstTokenAt - runStart } : {}),
           });
         }
         try { controller.enqueue(encoder.encode(`data: ${JSON.stringify(e)}\n\n`)); } catch { closed = true; }
