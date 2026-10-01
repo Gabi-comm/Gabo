@@ -339,6 +339,21 @@ test("New Session under the prompt compacts a copy of the chat into a new chat t
   await expect(page.getByText(/Carried over/)).toHaveCount(0);
 });
 
+test("background agents: the chat keeps showing work until they finish", async ({ page }) => {
+  await page.goto("/");
+  await prompt(page).fill("fix it in the background");
+  await page.keyboard.press("Enter");
+  await expect(page.getByText("The Coder is fixing the bugs.")).toBeVisible({ timeout: 20_000 });
+  // The lead's text is done, but the run is not: the spinner names the background work.
+  const spinner = page.getByRole("status").filter({ hasText: "Working in the background" });
+  await expect(spinner).toContainText("Coder fixing the bugs");
+  await expect(spinner).toContainText("the reply continues when they finish");
+  await expect(page.getByText("working in the background").first()).toBeVisible();
+  await expect(page.getByText("coder finished in the background: fixed 3 bugs")).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText("Done. Fake run finished.")).toBeVisible();
+  await expect(spinner).toHaveCount(0);
+});
+
 test("context guard: a huge chat warns above the prompt, shows its size, and asks before sending", async ({ page }) => {
   await page.goto("/");
   await prompt(page).fill("a huge chat");

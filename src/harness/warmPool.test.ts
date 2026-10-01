@@ -152,4 +152,66 @@ describe("warm session pool", () => {
     expect(splitForSpare({ ...base, tools: ["Read"] })).toBeNull();
     expect(splitForSpare(base)?.host.systemPrompt).toEqual({ type: "preset", preset: "claude_code" });
   });
+
+  it("doesn't end the run at the lead's result while background agents still work", async () => {
+    const script: SDKMessage[] = [
+      { type: "system", subtype: "init", session_id: "s1", model: "m" } as never,
+      { type: "system", subtype: "background_tasks_changed", tasks: [{ task_id: "k1", description: "Coder fixing bugs" }] } as never,
+      { type: "result", subtype: "success", session_id: "s1" } as never, // the lead's turn ends here
+      { type: "system", subtype: "background_tasks_changed", tasks: [] } as never,
+      { type: "system", subtype: "task_notification", task_id: "k1", status: "completed", summary: "fixed" } as never,
+      { type: "assistant", parent_tool_use_id: null, message: { content: [{ type: "text", text: "All fixed, here's how to run it." }] } } as never,
+      { type: "result", subtype: "success", session_id: "s1" } as never,
+    ];
+    const make = ({ prompt }: { prompt: AsyncIterable<SDKUserMessage> }) => {
+      async function* run(): AsyncGenerator<SDKMessage> { for await (const _ of prompt) { for (const m of script) yield m; } }
+      return Object.assign(run(), { interrupt: vi.fn(), setModel: vi.fn(), setPermissionMode: vi.fn(), close: vi.fn() }) as unknown as Query;
+    };
+    const pool = new WarmPool(make);
+    const { seen } = await turn(pool, "c1", "build it");
+    expect(seen.filter((m) => m.type === "result")).toHaveLength(2);
+    expect(seen.some((m) => m.type === "assistant")).toBe(true);
+    pool.closeAll();
+  });
+
+  it("ends after a short grace when background work finishes and the lead says nothing more", async () => {
+    vi.useFakeTimers();
+    const make = ({ prompt }: { prompt: AsyncIterable<SDKUserMessage> }) => {
+      async function* run(): AsyncGenerator<SDKMessage> {
+        for await (const _ of prompt) {
+          yield { type: "system", subtype: "background_tasks_changed", tasks: [{ task_id: "k1", description: "x" }] } as never;
+          yield { type: "result", subtype: "success", session_id: "s1" } as never;
+          yield { type: "system", subtype: "background_tasks_changed", tasks: [] } as never;
+        }
+      }
+      return Object.assign(run(), { interrupt: vi.fn(), setModel: vi.fn(), setPermissionMode: vi.fn(), close: vi.fn() }) as unknown as Query;
+    };
+    const pool = new WarmPool(make);
+    const p = turn(pool, "c1", "go");
+    await vi.advanceTimersByTimeAsync(9000);
+    const { seen } = await p;
+    expect(seen.map((m) => m.type)).toEqual(["system", "result", "system"]);
+    pool.closeAll();
+    vi.useRealTimers();
+  });
+
+  it("waits for the lead's follow-up turn when a background agent finished before the lead's turn ended (live order)", async () => {
+    const script: SDKMessage[] = [
+      { type: "system", subtype: "background_tasks_changed", tasks: [{ task_id: "k1", description: "poem" }] } as never,
+      { type: "system", subtype: "background_tasks_changed", tasks: [] } as never,
+      { type: "system", subtype: "task_notification", task_id: "k1", status: "completed", summary: "done" } as never,
+      { type: "result", subtype: "success", session_id: "s1" } as never, // lead: "the helper is writing your poem"
+      { type: "assistant", parent_tool_use_id: null, message: { content: [{ type: "text", text: "Here's your poem" }] } } as never,
+      { type: "result", subtype: "success", session_id: "s1" } as never,
+    ];
+    const make = ({ prompt }: { prompt: AsyncIterable<SDKUserMessage> }) => {
+      async function* run(): AsyncGenerator<SDKMessage> { for await (const _ of prompt) { for (const m of script) yield m; } }
+      return Object.assign(run(), { interrupt: vi.fn(), setModel: vi.fn(), setPermissionMode: vi.fn(), close: vi.fn() }) as unknown as Query;
+    };
+    const pool = new WarmPool(make);
+    const { seen } = await turn(pool, "c1", "poem please");
+    expect(seen.filter((m) => m.type === "result")).toHaveLength(2);
+    expect(seen.some((m) => m.type === "assistant")).toBe(true);
+    pool.closeAll();
+  });
 });

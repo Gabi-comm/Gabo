@@ -299,7 +299,7 @@ export function Console({ room, conversationId, sessionId, team, label, placehol
             </li>
           ))}
         </ol>
-        {t.running && <Spinner active={active} meta={meta} />}
+        {t.running && <Spinner active={active} meta={meta} background={t.background ?? []} />}
       </div>
       <div className={styles.dock}>
         <TodoPanel todos={t.todos ?? []} />
@@ -586,7 +586,7 @@ function PermissionPrompt({ item, onAnswer }: { item: Extract<Item, { kind: "per
 
 const GLYPHS = ["·", "✢", "✳", "✶", "✻", "✽", "✻", "✶", "✳", "✢"];
 
-function Spinner({ active, meta }: { active: AgentKey[]; meta: Meta }) {
+function Spinner({ active, meta, background }: { active: AgentKey[]; meta: Meta; background: { id: string; description: string }[] }) {
   const [tick, setTick] = useState(0);
   const start = useRef(Date.now());
   useEffect(() => {
@@ -595,10 +595,15 @@ function Spinner({ active, meta }: { active: AgentKey[]; meta: Meta }) {
   }, []);
   const secs = Math.floor((Date.now() - start.current) / 1000);
   const verb = active.length ? active.map((a) => meta(a).verb).join(" + ") : "Thinking";
+  // The lead ended its turn but sent agents off in the background: the work isn't done, say who's on it.
+  const waiting = background.length > 0;
   return (
     <div className={styles.spinner} role="status">
       <span className={styles.glyph} aria-hidden="true">{GLYPHS[tick % GLYPHS.length]}</span>
-      {verb}… <span className={styles.via}>({secs}s · esc to interrupt)</span>
+      {waiting
+        ? <>Working in the background: {background.map((b) => b.description || "an agent").join(" · ")}…</>
+        : <>{verb}…</>}{" "}
+      <span className={styles.via}>({secs}s · {waiting ? "the reply continues when they finish · " : ""}esc to interrupt)</span>
     </div>
   );
 }

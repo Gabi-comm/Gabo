@@ -72,9 +72,14 @@ interface Entry {
   busy: boolean;
   lastUsed: number;
   timer: ReturnType<typeof setTimeout> | null;
+  /** A read left waiting when a turn ended on the grace timer; the next turn picks it up first. */
+  pendingNext?: Promise<IteratorResult<SDKMessage>>;
   /** Came from a parked spare: a refused claim falls back to a fresh start. */
   claimed?: boolean;
 }
+
+/** After background work ends, how long to wait for the lead to continue before calling the run done. */
+export const DRAIN_GRACE_MS = 8_000;
 
 /** Options that can change on a live session without restarting it. */
 const LIVE_KEYS = new Set(["resume", "model", "permissionMode", "abortController", "canUseTool", "hooks"]);
@@ -245,12 +250,30 @@ export class WarmPool {
     const onAbort = () => { entry.q.interrupt().catch(() => this.close(conversationId)); };
     signal.addEventListener("abort", onAbort);
     let produced = false;
+    // Background agents (task ids, not counting ambient watchers). While any run, a `result` only ends the
+    // lead's turn, not the work: keep reading until they finish and the lead has wrapped up.
+    const background = new Set<string>();
+    let resultSeen = false;
+    // A task notification that lands while the lead is mid-turn wakes it for one more turn after this one;
+    // one that lands between turns starts that next turn itself (both orders seen live).
+    let inTurn = true;
+    let wake = false;
     try {
       entry.input.push({ ...message, session_id: entry.sessionId ?? "" });
       for (;;) {
         let next: IteratorResult<SDKMessage>;
         try {
-          next = await entry.iter.next();
+          const read = entry.pendingNext ?? entry.iter.next();
+          entry.pendingNext = undefined;
+          if (resultSeen && background.size === 0) {
+            // Background work just finished after the lead's result: the lead usually continues on its own.
+            // If nothing comes within the grace period, the run is over (the read stays parked for later).
+            const settled = await Promise.race([read, new Promise<null>((r) => setTimeout(() => r(null), DRAIN_GRACE_MS))]);
+            if (settled === null) { entry.pendingNext = read; break; }
+            next = settled;
+          } else {
+            next = await read;
+          }
         } catch (err) {
           this.close(conversationId);
           if (!produced) throw new StaleSession(entry.sessionId, err);
@@ -269,8 +292,19 @@ export class WarmPool {
         }
         produced = true;
         if (m.type === "system" && m.subtype === "init") { entry.sessionId = m.session_id; entry.initModel = m.model; }
+        if (m.type === "system" && m.subtype === "background_tasks_changed") {
+          background.clear();
+          for (const t of (m as { tasks?: { task_id: string; ambient?: boolean }[] }).tasks ?? []) if (!t.ambient) background.add(t.task_id);
+        }
+        if ((m.type === "assistant" || m.type === "stream_event") && !inTurn) inTurn = true;
+        if (m.type === "system" && m.subtype === "task_notification" && inTurn && !(m as { skip_transcript?: boolean }).skip_transcript) wake = true;
         onMessage(m);
-        if (m.type === "result") break;
+        if (m.type === "result") {
+          if (background.size === 0 && !wake) break;
+          wake = false;
+          inTurn = false;
+          resultSeen = true;
+        }
       }
       return reused ? "warm" : "fresh";
     } finally {

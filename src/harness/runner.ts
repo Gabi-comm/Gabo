@@ -434,6 +434,20 @@ export async function fakeRun({ room, prompt, emit, signal, delayMs = 120, ask, 
       if (decision === "allow_session") await step({ type: "mode", mode: "acceptEdits" });
       await step({ type: "notice", text: decision === "deny" ? "Keeps planning." : "Plan approved." });
     }
+    if (/in the background/i.test(prompt)) {
+      // The lead sends an agent off in the background and ends its turn; the run goes on until it finishes.
+      await step({ type: "agent_start", agent: "coder", toolUseId: "bg1", description: "fix the bugs" });
+      await step({ type: "agent_progress", agent: "coder", summary: "working in the background" });
+      await step({ type: "background", tasks: [{ id: "k1", description: "Coder fixing the bugs" }] });
+      await step({ type: "text", delta: "The Coder is fixing the bugs. I'll send its fixes to the Tester when it's done.", agent: null });
+      for (let i = 0; i < 12; i++) await step({ type: "agent_progress", agent: "coder", summary: "working in the background" });
+      await step({ type: "background", tasks: [] });
+      await step({ type: "agent_stop", agent: "coder", toolUseId: "bg1", ok: true });
+      await step({ type: "notice", text: "coder finished in the background: fixed 3 bugs" });
+      for (const word of "Done. Fake run finished.".split(/(?<= )/)) await step({ type: "text", delta: word, agent: null });
+      emit({ type: "result", ok: true, costUsd: 0, inputTokens: 1200, outputTokens: 340, durationMs: 1800 });
+      return;
+    }
     if (tier && tier !== "deep" && isTeamRoom(room)) {
       // Team in one reply: the lead writes two members' turns; the route turns them into agent blocks.
       const pair = roster.filter((a) => a !== "caveman").slice(0, 2);

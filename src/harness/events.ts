@@ -25,6 +25,8 @@ export type UiEvent =
   | { type: "result"; ok: boolean; costUsd: number; inputTokens: number; outputTokens: number; durationMs: number; tokens?: TokenCounts; turnTokens?: TokenCounts; contextTokens?: number }
   | { type: "error"; message: string; hint?: string }
   | { type: "notice"; text: string }
+  /** Background work still running (agents the lead sent off while it ended its turn). Replace semantics. */
+  | { type: "background"; tasks: { id: string; description: string }[] }
   /** The router's pick for this message, with the prompt so the UI can redo it with real agents. */
   | { type: "tier"; tier: "quick" | "standard" | "deep"; reason: string; prompt: string }
   | { type: "rate_limit"; info: Record<string, unknown> }
@@ -98,6 +100,9 @@ export function createMapper(known: (id: unknown) => boolean = isAgentId) {
   const streamedFor = new Set<string>();
   // Prompt size of the lead's latest model call: the chat's context, re-read on every message.
   let contextTokens = 0;
+  // Agents running in the background: their Agent call returned at once, they finish with a task_notification.
+  const backgrounded = new Set<string>();
+  const toolUseByTask = new Map<string, string>();
   const key = (parent: string | null | undefined) => parent ?? "main";
   const agentOf = (parent: string | null | undefined): AgentKey | null =>
     (parent && subagentByToolUse.get(parent)) || null;
@@ -118,6 +123,28 @@ export function createMapper(known: (id: unknown) => boolean = isAgentId) {
         }
         if (msg.subtype === "status" && typeof msg.permissionMode === "string") {
           return [{ type: "mode", mode: msg.permissionMode }];
+        }
+        if (msg.subtype === "background_tasks_changed" && Array.isArray(msg.tasks)) {
+          const tasks = (msg.tasks as { task_id: string; description?: string; ambient?: boolean }[])
+            .filter((t) => !t.ambient)
+            .map((t) => ({ id: String(t.task_id), description: String(t.description ?? "") }));
+          return [{ type: "background", tasks }];
+        }
+        if (msg.subtype === "task_started" && typeof msg.task_id === "string" && typeof msg.tool_use_id === "string") {
+          toolUseByTask.set(msg.task_id, msg.tool_use_id);
+          return [];
+        }
+        if (msg.subtype === "task_notification") {
+          const toolUseId = typeof msg.tool_use_id === "string" ? msg.tool_use_id : toolUseByTask.get(String(msg.task_id));
+          const agent = toolUseId ? subagentByToolUse.get(toolUseId) : undefined;
+          if (!agent || !toolUseId) return [];
+          backgrounded.delete(toolUseId);
+          const status = String(msg.status ?? "completed");
+          const summary = typeof msg.summary === "string" ? msg.summary.trim().split("\n")[0].slice(0, 200) : "";
+          return [
+            { type: "agent_stop", agent, toolUseId, ok: status === "completed" },
+            { type: "notice", text: `${agent} ${status === "completed" ? "finished" : status} in the background${summary ? `: ${summary}` : "."}` },
+          ];
         }
         if (msg.subtype === "task_progress" && typeof msg.summary === "string") {
           const agent = subagentByToolUse.get(String(msg.tool_use_id));
@@ -176,6 +203,12 @@ export function createMapper(known: (id: unknown) => boolean = isAgentId) {
           const ok = !b.is_error;
           const sub = subagentByToolUse.get(id);
           if (sub) {
+            // A background agent's call returns at once with a placeholder; it is still working.
+            if (ok && /async agent launched|running in the background|in the background|background task/i.test(resultText(b.content))) {
+              backgrounded.add(id);
+              out.push({ type: "agent_progress", agent: sub, summary: "working in the background" });
+              continue;
+            }
             out.push({ type: "agent_stop", agent: sub, toolUseId: id, ok });
             continue;
           }

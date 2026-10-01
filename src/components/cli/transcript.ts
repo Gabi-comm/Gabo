@@ -30,6 +30,8 @@ export interface Transcript {
   todos?: Todo[];
   /** Tokens the chat re-reads on every message (the lead's last prompt size). */
   context?: number;
+  /** Background agents still working after the lead ended its turn. */
+  background?: { id: string; description: string }[];
 }
 
 export type Action =
@@ -65,6 +67,8 @@ export function reduce(t: Transcript, a: Action): Transcript {
       return { ...t, running: true, items: [...t.items, { kind: "user", text: a.text, ...(a.images ? { images: a.images } : {}) }] };
     case "notice":
       return { ...t, items: [...t.items, { kind: "notice", text: a.text }] };
+    case "background":
+      return { ...t, background: a.tasks };
     case "tier":
       return { ...t, items: [...t.items, { kind: "tier", tier: a.tier, reason: a.reason, prompt: a.prompt }] };
     case "clear":
@@ -133,7 +137,7 @@ export function reduce(t: Transcript, a: Action): Transcript {
       return { ...t, items: [...t.items, { kind: "error", message: a.message, hint: a.hint }] };
     case "done":
       return {
-        ...t, running: false, pendingPermission: null,
+        ...t, running: false, pendingPermission: null, background: [],
         items: t.items.map((i) =>
           (i.kind === "tool" || i.kind === "agent") && i.status === "running" ? { ...i, status: "stopped" as const }
           : i.kind === "permission" && !i.decision ? { ...i, decision: "deny" as const }

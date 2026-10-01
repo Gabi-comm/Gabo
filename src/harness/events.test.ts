@@ -34,3 +34,23 @@ describe("parallel agents in the transcript", () => {
     expect(texts).toEqual(["Strong case.", "Who pays? Students."]);
   });
 });
+
+describe("background agents", () => {
+  it("keeps a backgrounded agent running until its task notification, and reports the live set", () => {
+    const map = createMapper(() => true);
+    map({ type: "assistant", parent_tool_use_id: null, message: { content: [
+      { type: "tool_use", id: "t9", name: "Agent", input: { subagent_type: "coder", description: "fix the bugs", run_in_background: true } },
+    ] } } as never);
+    const placeholder = map({ type: "user", parent_tool_use_id: null, message: { content: [
+      { type: "tool_result", tool_use_id: "t9", content: [{ type: "text", text: "Async agent launched successfully. (This tool result is internal metadata.)" }] },
+    ] } } as never);
+    expect(placeholder).toEqual([{ type: "agent_progress", agent: "coder", summary: "working in the background" }]);
+    expect(map({ type: "system", subtype: "background_tasks_changed", tasks: [{ task_id: "k1", description: "Coder fixing bugs" }, { task_id: "w", description: "watcher", ambient: true }] } as never))
+      .toEqual([{ type: "background", tasks: [{ id: "k1", description: "Coder fixing bugs" }] }]);
+    const done = map({ type: "system", subtype: "task_notification", task_id: "k1", tool_use_id: "t9", status: "completed", summary: "Fixed 3 bugs\nmore" } as never);
+    expect(done).toEqual([
+      { type: "agent_stop", agent: "coder", toolUseId: "t9", ok: true },
+      { type: "notice", text: "coder finished in the background: Fixed 3 bugs" },
+    ]);
+  });
+});
