@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import styles from "./status.module.css";
+import { Analytics, type WeeklyAnalytics } from "./Analytics";
 
 interface Check { name: string; ok: boolean; detail: string; ms?: number }
 interface Status {
@@ -19,6 +20,7 @@ interface Status {
       today: Totals; week: Totals;
       byRoom: (Totals & { key: string })[]; byModel: (Totals & { key: string })[];
     };
+    analytics?: WeeklyAnalytics;
   };
 }
 
@@ -133,6 +135,8 @@ export function StatusPage() {
               <Row label="Other AIs">{status.tools.otherAis.join(", ") || "none connected (Plugins)"}</Row>
             </dl>
           </section>
+
+          {status.usage.analytics && <Analytics a={status.usage.analytics} />}
 
           <section className={`${styles.card} ${styles.wide}`} aria-label="Usage">
             <h2>Usage</h2>
