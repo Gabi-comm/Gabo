@@ -16,7 +16,7 @@ export type UiEvent =
   | { type: "text"; delta: string; agent: AgentKey | null }
   | { type: "tool_start"; id: string; name: string; summary: string; agent: AgentKey | null; todos?: Todo[]; diff?: Diff }
   | { type: "tool_result"; id: string; ok: boolean; preview: string; lines: number }
-  | { type: "agent_start"; agent: AgentKey; toolUseId: string; description: string }
+  | { type: "agent_start"; agent: AgentKey; toolUseId: string; description: string; from?: AgentKey[] }
   | { type: "agent_progress"; agent: AgentKey; summary: string }
   | { type: "agent_stop"; agent: AgentKey; toolUseId: string; ok: boolean }
   | { type: "permission_request"; requestId: string; tool: string; summary: string; kind?: AskKind; questions?: Question[]; plan?: string }
@@ -129,8 +129,10 @@ export function createMapper(known: (id: unknown) => boolean = isAgentId) {
             const name = String(b.name);
             const input = (b.input ?? {}) as Record<string, unknown>;
             if ((name === "Agent" || name === "Task") && typeof input.subagent_type === "string" && known(input.subagent_type)) {
-              subagentByToolUse.set(id, input.subagent_type as AgentKey);
-              out.push({ type: "agent_start", agent: input.subagent_type as AgentKey, toolUseId: id, description: String(input.description ?? "") });
+              const who = input.subagent_type as AgentKey;
+              subagentByToolUse.set(id, who);
+              const from = handOffs(String(input.prompt ?? ""), [...new Set(subagentByToolUse.values())].filter((a) => a !== who));
+              out.push({ type: "agent_start", agent: who, toolUseId: id, description: String(input.description ?? ""), ...(from.length ? { from } : {}) });
             } else if (name === "TodoWrite" && Array.isArray(input.todos)) {
               out.push({ type: "tool_start", id, name, summary: "Update Todos", agent, todos: input.todos as Todo[] });
             } else {
@@ -181,3 +183,15 @@ export function createMapper(known: (id: unknown) => boolean = isAgentId) {
     }
   };
 }
+
+/** Teammates a brief hands work from: earlier agents named in it (by id, or by name for custom agents). */
+export function handOffs(brief: string, earlier: AgentKey[]): AgentKey[] {
+  const text = brief.toLowerCase();
+  return earlier.filter((a) => {
+    const plain = a.replace(/^x-/, "");
+    return new RegExp(`\\b(${escapeRe(a)}|${escapeRe(plain.replace(/-/g, " "))})\\b`).test(text);
+  });
+}
+
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+

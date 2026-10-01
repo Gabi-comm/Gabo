@@ -365,7 +365,11 @@ function ItemView({ item, meta, onAnswer, onSkills }: { item: Item; meta: Meta; 
         <div className={styles.agentBlock} data-status={item.status}>
           <AgentMascot id={item.agent} info={meta(item.agent)} size={28} sticker={false} />
           <div>
-            <div><strong>{meta(item.agent).name}</strong> <span className={styles.via}>{item.description}</span></div>
+            <div>
+              <strong>{meta(item.agent).name}</strong>
+              {item.from?.length ? <span className={styles.handoff} title="Builds on what these teammates said"> ← {item.from.map((a) => meta(a).short).join(", ")}</span> : null}{" "}
+              <span className={styles.via}>{item.description}</span>
+            </div>
             <div className={styles.via}>
               {item.status === "running" ? (item.progress ?? `${meta(item.agent).verb}…`) : item.status === "ok" ? "done" : item.status === "stopped" ? "stopped" : "failed"}
             </div>

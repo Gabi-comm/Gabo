@@ -13,12 +13,15 @@ import { loadOverrides, type AgentOverride, type Overrides } from "./overrides";
 import type { RunPrefs } from "./controls";
 import { isLocalOn, localEnv, type LocalLlmConfig } from "./localLlm";
 import { blockedTools, leadDefaults, profileFor, type BudgetMode } from "./budget";
+import { isTeamRoom } from "./rooms";
 import { summarizeTool } from "./events";
 import { QUICK_AGENTS, arenaSizeGuard, detectPython, ensureIdeaArena, withIdeaRubric } from "./arena";
 
 export const SKILL_READ_ROOTS = [path.join(os.homedir(), ".claude", "skills")];
 
-function agentPrompt(id: AgentKey, spec: ParsedSpec, overrides: Overrides, customs: CustomAgent[], skills: string[], words: number): string | null {
+const TEAMMATE = "You work with teammates in this room. If your brief has a Hand-off from other agents, open with one or two lines answering them by name (agree, challenge or build on what they said), then do your part. End with one line starting \"For the next agent:\" saying what they should pick up or check.";
+
+function agentPrompt(id: AgentKey, spec: ParsedSpec, overrides: Overrides, customs: CustomAgent[], skills: string[], words: number, teamRoom = false): string | null {
   let parts: string[];
   if (isAgentId(id)) {
     const override: AgentOverride | undefined = overrides[id];
@@ -36,6 +39,7 @@ function agentPrompt(id: AgentKey, spec: ParsedSpec, overrides: Overrides, custo
     ? `Skills picked for you: ${skills.join(", ")}. Load one with the Skill tool only when the task needs it.`
     : "No extra skills were picked for this task.");
   parts.push(`Output budget: at most ${words} words, in the sections your role asks for. The lead passes your output on as-is, so don't restate the task or repeat what others said.`);
+  if (teamRoom) parts.push(TEAMMATE);
   return parts.join("\n\n");
 }
 
@@ -89,7 +93,7 @@ export function buildOptions({ room, workspace, spec, sessionId, skillsByAgent =
   for (const id of rosterFor(room, team)) {
     const custom = customAgents.find((c) => c.id === id);
     const profile = profileFor(id, budget, isAgentId(id) ? overrides[id] ?? {} : { model: custom?.model, effort: custom?.effort });
-    const prompt = agentPrompt(id, spec, overrides, customAgents, skillsByAgent[id] ?? [], profile.words);
+    const prompt = agentPrompt(id, spec, overrides, customAgents, skillsByAgent[id] ?? [], profile.words, isTeamRoom(room));
     if (!prompt) continue; // a custom agent that was deleted since the chat started
     const blocked = blockedTools(profile.tools);
     agents[id] = {
@@ -399,7 +403,9 @@ export async function fakeRun({ room, prompt, emit, signal, delayMs = 120, ask, 
     for (const [i, agent] of roster.entries()) {
       const id = `a${i}`;
       const meta = metaOf(agent, customAgents);
-      await step({ type: "agent_start", agent, toolUseId: id, description: `${meta.verb.toLowerCase()} on: ${prompt.slice(0, 40)}` });
+      // Team rooms: each agent after the first builds on the one before (as the lead's hand-off brief would say).
+      const from = isTeamRoom(room) && i > 0 ? [roster[i - 1]] : undefined;
+      await step({ type: "agent_start", agent, toolUseId: id, description: `${meta.verb.toLowerCase()} on: ${prompt.slice(0, 40)}`, ...(from ? { from } : {}) });
       for (const word of `${meta.name} reporting. `.split(/(?<= )/)) await step({ type: "text", delta: word, agent });
       await step({ type: "agent_stop", agent, toolUseId: id, ok: true });
     }

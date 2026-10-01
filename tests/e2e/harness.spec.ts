@@ -38,6 +38,16 @@ test("keyboard only: send, answer the permission prompt with a number key, run f
   await expect(page.getByRole("img", { name: /Hackathon: .*The Caveman/ })).toBeVisible();
 });
 
+test("Workspace rooms: agents work as a team and each shows who it builds on", async ({ page }) => {
+  await page.goto("/library");
+  await prompt(page).fill("teach me binary search");
+  await page.keyboard.press("Enter");
+  await expect(page.getByText("Done. Fake run finished.")).toBeVisible({ timeout: 20_000 });
+  const handoffs = page.getByTitle("Builds on what these teammates said");
+  await expect(handoffs.first()).toContainText("← Researcher");
+  await expect(handoffs).toHaveCount(3);
+});
+
 test("Esc interrupts a running run", async ({ page }) => {
   await page.goto("/library");
   await prompt(page).fill("teach me recursion");

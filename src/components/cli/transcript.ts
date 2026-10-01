@@ -7,7 +7,7 @@ export type Item =
   | { kind: "user"; text: string; images?: number }
   | { kind: "text"; agent: AgentKey | null; text: string }
   | { kind: "tool"; id: string; summary: string; agent: AgentKey | null; status: Status; preview?: string; lines?: number; diff?: Diff }
-  | { kind: "agent"; agent: AgentKey; toolUseId: string; description: string; status: Status; progress?: string }
+  | { kind: "agent"; agent: AgentKey; toolUseId: string; description: string; status: Status; progress?: string; from?: AgentKey[] }
   | { kind: "permission"; requestId: string; tool: string; summary: string; decision?: Decision; ask?: AskKind; questions?: Question[]; plan?: string; answers?: Record<string, string> }
   | { kind: "skills"; lines: SkillLine[]; missing: SkillRec[]; note?: string; installed?: string[]; dismissed?: boolean }
   | { kind: "error"; message: string; hint?: string }
@@ -86,7 +86,7 @@ export function reduce(t: Transcript, a: Action): Transcript {
     case "tool_result":
       return { ...t, items: patchLast(t.items, "tool", (i) => i.id === a.id, { status: a.ok ? "ok" : "error", preview: a.preview, lines: a.lines }) };
     case "agent_start":
-      return { ...t, items: [...t.items, { kind: "agent", agent: a.agent, toolUseId: a.toolUseId, description: a.description, status: "running" }] };
+      return { ...t, items: [...t.items, { kind: "agent", agent: a.agent, toolUseId: a.toolUseId, description: a.description, status: "running", ...(a.from?.length ? { from: a.from } : {}) }] };
     case "agent_progress":
       return { ...t, items: patchLast(t.items, "agent", (i) => i.agent === a.agent && i.status === "running", { progress: a.summary }) };
     case "agent_stop":

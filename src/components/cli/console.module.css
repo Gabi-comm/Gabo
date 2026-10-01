@@ -212,3 +212,5 @@
 .newSession { background: var(--surface); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 1px 8px; font: inherit; font-size: 12px; }
 .newSession:hover:not(:disabled) { border-color: var(--blue-text); }
 .newSession:disabled { opacity: 0.5; cursor: default; }
+
+.handoff { color: var(--blue-text); font-size: 12px; }

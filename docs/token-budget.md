@@ -22,7 +22,7 @@ something the lead can't.**
 - *Effort* controls thinking tokens, and those count as output. Medium is enough for argued, well-scoped roles.
   High is kept for the one ruling where a wrong call wastes the whole run.
 - *Fewer agents, used on purpose.* AgentSlimming cut multi-agent tokens by up to 78.9% with no loss in accuracy (sometimes
-  a gain). Triage in every room does the same: it answers directly, calls one agent, or calls the team only when needed.
+  a gain). Triage in Home does the same: it answers directly, or calls an agent only when needed. Workspace rooms use the team on every prompt (Gab's choice, 2026-10-01), but with short, quoted hand-offs instead of whole conversations.
 - *Tool pruning.* Roles that only think don't need Bash, Edit or MCP. Blocking those tools stops costly detours
   (reading files, shell runs) and keeps the role on its job.
 - *Output budgets and short hand-offs.* In multi-agent systems, input is the biggest cost: agents re-read each other's
@@ -79,7 +79,7 @@ Local LLM mode sends everything to the chosen Ollama model and ignores these.
 
 ## Workflow changes that go with it
 
-- **Triage first**, in every room: answer directly, call one agent, or pull the team only when several viewpoints matter.
+- **Home triages first**: answer directly, or call one agent. **Workspace rooms work as a team on every prompt** (changed 2026-10-01 at Gab's request): at least two fitting members, run in order, each brief starting with a Hand-off that quotes earlier agents by id; each agent answers its teammates, does its part, and ends with "For the next agent:".
 - **The Caveman recap is a style.** The lead writes it itself: answer first, no filler, every number, file name and
   warning kept. The Caveman stays in every room's roster and runs when you ask for it by name or in its own room.
 - **Arena:** the tournament runs only when you want ideas generated or compared. It uses `--agents 8` by default (16 with

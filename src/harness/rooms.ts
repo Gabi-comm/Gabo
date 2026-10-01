@@ -13,13 +13,15 @@ export interface RoomMeta {
   placeholder: string;
 }
 
+/** Every room ends with a Caveman-style recap the lead writes itself (docs/token-budget.md). */
 /**
- * Shared by every room (docs/token-budget.md): decide how much help the task needs before pulling agents,
- * pass short structured hand-offs, and finish with a Caveman-style recap written by the lead itself.
- * The Caveman agent stays in every room, but is only called when Gab asks for it.
+ * Workspace rooms (Library, Arena, Hackathon, Laboratory): Gab comes here for the team, so every prompt is
+ * handled by the members whose roles fit it, and they work on each other's output instead of in parallel.
  */
-const TRIAGE =
-  "Triage first: answer directly when the task is simple; call one agent when one view is enough; pull the team only when the task needs several viewpoints. Never call an agent just to restate what another said. Give each agent a short brief (the question, key facts, file paths or quotes it needs), not the whole conversation, and pass its structured output on instead of re-deriving it.";
+const TEAMWORK =
+  "Teamwork: Gab uses this room to have the team handle his prompt together. For every request, read the prompt, pick the members whose roles fit it (at least two, unless Gab names one or it is a one-line question), and run them one after another in a sensible order. " +
+  "Agents talk through you: begin each brief after the first with a Hand-off section that quotes the earlier agents' key points labelled by their ids (\"From researcher: …\"), and ask the agent to answer them (agree, challenge or build on them) before adding its own part. " +
+  "If an agent disputes another, give the disputed agent one reply. Keep briefs short (the question, key facts, paths, quotes), not the whole conversation, and pass each agent's output on as written.";
 const RECAP =
   "Finish with a short recap in Caveman style, written by you: answer first, no greeting or filler, keep every number, file name and warning. Call the caveman agent only when Gab asks for it by name.";
 
@@ -41,10 +43,10 @@ export const ROOMS: Record<BaseRoomId, RoomMeta> = {
     roster: ["researcher", "tutor", "planner", "caveman"],
     workflow: [
       "You lead the Library: studying, researching and understanding things.",
-      TRIAGE,
+      TEAMWORK,
       "Typical flow when a team is needed: the Tutor first asks what is being studied, the time available and the deadline (unless already given);",
       "the Researcher learns the topic from strong sources and cites them; the Tutor turns the Researcher's summary into a study plan and practice questions with hidden answers;",
-      "the Planner joins only when the goal is big and needs steps. A quick factual question needs only the Researcher, or no agent.",
+      "the Planner joins when the goal is big and needs steps.",
       RECAP,
     ].join(" "),
     placeholder: "What are you learning?",
@@ -55,7 +57,7 @@ export const ROOMS: Record<BaseRoomId, RoomMeta> = {
     roster: ["emperor", "believer", "skeptic", "investor", "judge", "caveman"],
     workflow: [
       "You lead the Arena: brainstorming and picking the best idea.",
-      TRIAGE,
+      TEAMWORK,
       "Run the idea-arena only when Gab wants ideas generated or compared: the Emperor sharpens the challenge into one clear question, then runs the idea-arena skill with the Idea Rubric using --agents 8 (16 with --quick only if Gab asks for more, 100 only when he confirmed a full run).",
       "When Gab brings his own idea to judge, skip the tournament.",
       "Give the crowned (or Gab's) idea to the Believer, Skeptic and Investor as a five-line brief; the Skeptic also gets the Believer's case. The Judge rules last from their three outputs.",
@@ -69,10 +71,10 @@ export const ROOMS: Record<BaseRoomId, RoomMeta> = {
     roster: ["planner", "designer", "coder", "tester", "investor", "caveman"],
     workflow: [
       "You lead the Hackathon: building and shipping marketable software fast in the current workspace.",
-      TRIAGE,
+      TEAMWORK,
       "For a real build: the Planner defines done and the steps; the Designer sets the direction before UI is built; the Coder builds the smallest end-to-end version;",
       "the Tester tries to break it, and if it fails the Coder fixes once and the Tester re-checks; the Investor checks who would pay only when the product is meant to sell.",
-      "A small change goes straight to the Coder (and the Tester if it's risky). Read files once and hand agents the paths and excerpts they need.",
+      "A small change still goes to the Coder and then the Tester, who checks the Coder's change. Read files once and hand agents the paths and excerpts they need.",
       RECAP.replace("recap in Caveman style", "recap in Caveman style (what shipped, how to run it, what still needs attention)"),
     ].join(" "),
     placeholder: "What are we shipping?",
@@ -111,13 +113,18 @@ export function rosterFor(room: RoomId, team?: readonly string[]): AgentKey[] {
   return ROOMS[room as BaseRoomId].roster;
 }
 
+/** Workspace rooms, where agents work as a team on every prompt. */
+export function isTeamRoom(room: RoomId): boolean {
+  return room === "library" || room === "arena" || room === "hackathon" || room === "laboratory";
+}
+
 export function workflowFor(room: RoomId, team?: readonly string[]): string {
   if (room.startsWith("agent:")) {
     const id = room.slice(6);
     return `You are a solo session with the ${id} agent. Delegate the user's task to the ${id} agent and show its output in full. The Caveman is available for a short recap if asked.`;
   }
   if (room === "laboratory") {
-    return `${ROOMS.laboratory.workflow} Team (subagent ids): ${labTeam(team).join(", ")}. ${TRIAGE} Use the members the task needs, in a sensible order, and let them build on each other's outputs. ${RECAP}`;
+    return `${ROOMS.laboratory.workflow} Team (subagent ids): ${labTeam(team).join(", ")}. ${TEAMWORK} ${RECAP}`;
   }
   return ROOMS[room as BaseRoomId].workflow;
 }

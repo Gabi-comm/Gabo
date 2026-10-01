@@ -86,13 +86,23 @@ describe("runs apply the profiles", () => {
 });
 
 describe("room workflows", () => {
-  it("triage first, and the lead writes the Caveman-style recap itself", () => {
-    for (const room of ROOM_IDS) {
-      const w = workflowFor(room, ["tutor", "caveman"]);
+  it("Home triages; Workspace rooms work as a team with hand-offs; the lead writes the Caveman-style recap", () => {
+    expect(workflowFor("home")).toMatch(/Triage first/);
+    for (const room of ROOM_IDS.filter((r) => r !== "home")) {
+      const w = workflowFor(room, ["tutor", "researcher", "caveman"]);
       expect(w, room).not.toMatch(/Caveman always writes/);
-      expect(w, room).toMatch(/Triage first/);
+      expect(w, room).toMatch(/Teamwork/);
+      expect(w, room).toMatch(/Hand-off section/);
+      expect(w, room).toMatch(/at least two/);
       expect(w, room).toMatch(/Caveman style/);
     }
+  });
+  it("agents in Workspace rooms answer their teammates first and leave a note for the next agent", () => {
+    const team = buildOptions({ room: "library", workspace: path.resolve("/w"), spec });
+    expect(team.agents!.tutor.prompt).toMatch(/answering them by name/);
+    expect(team.agents!.tutor.prompt).toMatch(/For the next agent:/);
+    const home = buildOptions({ room: "home", workspace: path.resolve("/w"), spec });
+    expect(home.agents!.caveman.prompt).not.toMatch(/For the next agent/);
   });
   it("the Arena runs the idea-arena only when ideas are wanted, with 8 competitors by default", () => {
     const w = workflowFor("arena");
