@@ -8,6 +8,7 @@ import { getClaudeInfo } from "./claudeInfo";
 import { FAKE, getWorkspace } from "./config";
 import { loadProviders } from "./providers";
 import { loadLocal } from "./localLlm";
+import { activeBackend } from "./backend";
 import { planUsage, readRateLimits, usageSummary, type RateLimit } from "./usageLog";
 import { isLocalOn } from "@/harness/localLlm";
 import type { PlanUsage } from "@/harness/usage";
@@ -22,7 +23,7 @@ export interface Status {
   tools: { mcp: { name: string; status: string; error?: string }[]; plugins: string[]; commands: number; otherAis: string[] };
   gabo: Check[];
   /** Which brain the agents use right now. */
-  backend: { kind: "subscription" | "local"; detail: string };
+  backend: { kind: "subscription" | "local" | "key" | "none"; detail: string };
   usage: {
     plan: { text: string; meters: PlanUsage[] } | null;
     rateLimits: RateLimit[];
@@ -71,9 +72,12 @@ const FAKE_STATUS: Status = {
 /** Everything the CLI's /status shows, plus Gabo's own checks. Every part is independent: one failure never hides the rest. */
 export async function getStatus(refresh = false): Promise<Status> {
   const local = loadLocal();
+  const active = activeBackend();
   const backend: Status["backend"] = isLocalOn(local)
     ? { kind: "local", detail: `Ollama · ${local.model} (${local.baseUrl})` }
-    : { kind: "subscription", detail: "Claude plan (subscription)" };
+    : active.kind === "claude-login" ? { kind: "subscription", detail: "Claude Code login on this computer" }
+    : active.kind === "none" ? { kind: "none", detail: "Not connected" }
+    : { kind: "key", detail: active.label };
   if (FAKE) {
     return { ...FAKE_STATUS, checkedAt: Date.now(), backend, usage: { plan: await planUsage(refresh), rateLimits: readRateLimits(), summary: usageSummary() } };
   }

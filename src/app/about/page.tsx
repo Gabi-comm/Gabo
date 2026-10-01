@@ -18,7 +18,7 @@ export default function AboutPage() {
       <section className={styles.section}>
         <h2>What it is</h2>
         <p>
-          At its core Gabo runs the real Claude Code engine (through the Claude Agent SDK) on your own Claude plan, on your own machine. It
+          At its core Gabo runs the Claude Code engine (through the Claude Agent SDK) on your own machine, on the AI account you connect: a Claude, OpenAI or Gemini API key, or a free local model in Ollama. It
           loads everything your CLI loads — plugins, skills, MCP servers, CLAUDE.md — and shares the CLI&apos;s session history, so a chat can
           start in the terminal and continue here, or the other way round.
         </p>
@@ -44,7 +44,8 @@ export default function AboutPage() {
           <dt><Link href="/laboratory">Laboratory</Link></dt><dd>You pick the team, including agents you made.</dd>
           <dt><Link href="/agents">Agents</Link></dt><dd>Every agent on its stage; talk to one on its own.</dd>
           <dt><Link href="/plugins">Plugins</Link></dt><dd>Let Claude consult ChatGPT, Gemini, OpenClaw, Hermes or any OpenAI-compatible model.</dd>
-          <dt><Link href="/local-llm">Local LLM</Link></dt><dd>Run the agents on a model in Ollama instead of your Claude plan.</dd>
+          <dt><Link href="/local-llm">Local LLM</Link></dt><dd>Run the agents on a model in Ollama, with skills and the plugins you pick.</dd>
+          <dt><Link href="/connect">Connect AI</Link></dt><dd>Connect Claude, OpenAI or Gemini with your own API key.</dd>
           <dt><Link href="/status">Status</Link></dt><dd>Version, account, connectivity, tools and usage.</dd>
           <dt><Link href="/settings">Settings</Link></dt><dd>Edit agents&apos; prompts and goals, or make your own agent.</dd>
         </dl>
@@ -53,7 +54,7 @@ export default function AboutPage() {
       <section className={styles.section}>
         <h2>Principles</h2>
         <ul>
-          <li><strong>Your machine, your plan.</strong> It only listens on 127.0.0.1, uses your Claude login, and keeps keys and chats in local files.</li>
+          <li><strong>Your machine, your plan.</strong> It only listens on 127.0.0.1, uses the account you connect, and keeps keys and chats in local files.</li>
           <li><strong>You stay in control.</strong> Edits and commands ask first; agents are locked to the workspace folder; paid calls to other AIs need your approval.</li>
           <li><strong>Any model, same team.</strong> Claude, the AIs on the Plugins page, or a local Ollama model: the agents, rooms and tools stay the same.</li>
           <li><strong>The CLI, not a copy of it.</strong> Slash commands, permission modes, plan approval, todos, images and @-mentions behave as they do in the terminal.</li>

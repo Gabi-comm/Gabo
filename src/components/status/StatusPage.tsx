@@ -11,7 +11,7 @@ interface Status {
   connectivity: Check[];
   tools: { mcp: { name: string; status: string; error?: string }[]; plugins: string[]; commands: number; otherAis: string[] };
   gabo: Check[];
-  backend: { kind: "subscription" | "local"; detail: string };
+  backend: { kind: "subscription" | "local" | "key" | "none"; detail: string };
   usage: {
     plan: { text: string; meters: { label: string; percent: number; resets: string }[] } | null;
     rateLimits: { type: string; status: string; utilization?: number; resetsAt?: number; at: number }[];
@@ -100,7 +100,7 @@ export function StatusPage() {
           <section className={styles.card} aria-label="Claude Code">
             <h2>Claude Code</h2>
             <dl>
-              <Row label="Running on">{status.backend.kind === "local" ? <a href="/local-llm">{status.backend.detail}</a> : status.backend.detail}</Row>
+              <Row label="Running on">{status.backend.kind === "local" ? <a href="/local-llm">{status.backend.detail}</a> : <a href="/connect">{status.backend.detail}</a>}</Row>
               <Row label="Version">{status.claudeCode.bundledVersion ?? "unknown"} <span className={styles.muted}>(used by Gabo)</span></Row>
               <Row label="CLI on PATH">{status.claudeCode.cliVersion ?? "not found"}</Row>
               <Row label="Agent SDK">{status.claudeCode.sdkVersion ?? "unknown"}</Row>

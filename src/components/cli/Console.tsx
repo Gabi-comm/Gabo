@@ -151,7 +151,7 @@ export function Console({ room, conversationId, sessionId, team, label, placehol
         dispatch({ type: "notice", text: rosterFor(room, team).map((a) => `${meta(a).name.padEnd(15)} ${meta(a).tagline}`).join("\n") });
         return true;
       case "/cost":
-        dispatch({ type: "notice", text: `${t.tokens.toLocaleString()} tokens this chat · $${t.costUsd.toFixed(4)} API-equivalent (billed to your Claude plan, not per token)` });
+        dispatch({ type: "notice", text: `${t.tokens.toLocaleString()} tokens this chat · $${t.costUsd.toFixed(4)} API-equivalent (on a subscription login it counts toward the plan; on an API key it's billed per token)` });
         return true;
       case "/skills": {
         const last = [...t.items].reverse().find((i) => i.kind === "skills");
@@ -219,7 +219,7 @@ export function Console({ room, conversationId, sessionId, team, label, placehol
     stick.current = true;
     if (value.startsWith("/") && (await runSlash(value))) return;
     if (room === "arena" && /(^|\s)--full\b/.test(value)) {
-      const ok = window.confirm("Run the full arena with 100 agents? It uses far more of your Claude plan than --quick (16). Cancel runs --quick instead.");
+      const ok = window.confirm("Run the full arena with 100 agents? It uses far more of your AI account than --quick (16). Cancel runs --quick instead.");
       dispatch({ type: "notice", text: ok ? "Full 100-agent arena confirmed." : "Running --quick (16 agents) instead." });
       await send(value, { full: ok, prefs: toRunPrefs(prefs), team });
       return;

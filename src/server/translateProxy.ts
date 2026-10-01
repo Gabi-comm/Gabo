@@ -24,6 +24,9 @@ export function authorized(req: Request): boolean {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
+/** GABO_TRANSLATE_LOG=1: one line per call (sizes and outcome, never content) to diagnose a provider. */
+const log = (...a: unknown[]) => { if (process.env.GABO_TRANSLATE_LOG === "1") console.log("[translate]", ...a); };
+
 const errorResponse = (status: number, message: string) => Response.json(anthropicError(status, message), { status });
 
 export async function countTokens(req: Request): Promise<Response> {
@@ -44,6 +47,8 @@ export async function messages(req: Request): Promise<Response> {
   const model = mapModel(String(body.model ?? ""), tiersFor(provider.id));
   const names = new ToolNames();
   const payload = toOpenAI(body, upstream, model, names);
+  const t0 = Date.now();
+  log(upstream, model, `messages=${(payload.messages as unknown[]).length}`, `tools=${(payload.tools as unknown[] | undefined)?.length ?? 0}`, `chars=${JSON.stringify(payload).length}`, body.stream ? "stream" : "once");
   let res: Response;
   try {
     res = await fetch(`${upstreamBase(upstream)}/chat/completions`, {
@@ -90,7 +95,9 @@ export async function messages(req: Request): Promise<Response> {
             } catch { /* skip a malformed chunk */ }
           }
         }
-        ctrl.enqueue(enc.encode(t.end()));
+        const tail = t.end();
+        log("done", `${((Date.now() - t0) / 1000).toFixed(1)}s`, /"stop_reason":"(\w+)"/.exec(tail)?.[1], /"usage":(\{[^}]*\})/.exec(tail)?.[1], `blocks=${t.blocks}`);
+        ctrl.enqueue(enc.encode(tail));
       } catch (err) {
         const e = anthropicError(502, `${provider.label} stream broke: ${err instanceof Error ? err.message : String(err)}`);
         ctrl.enqueue(enc.encode(`event: error\ndata: ${JSON.stringify(e)}\n\n`));

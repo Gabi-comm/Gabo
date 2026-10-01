@@ -644,7 +644,7 @@ test("Switch to Local LLM: guide, Ollama status, pick a model, test, switch on â
   await expect(page.getByRole("region", { name: "Ollama" })).toContainText("running");
   await page.getByLabel("Model", { exact: true }).selectOption("qwen3-coder:30b");
   await page.getByRole("button", { name: "Test model" }).click();
-  await expect(page.getByText("OK (fake qwen3-coder:30b)")).toBeVisible();
+  await expect(page.getByText(/Tools work: called read_note \(fake qwen3-coder:30b\)/)).toBeVisible();
   await page.getByRole("switch", { name: "Use the local model for all agents" }).click();
   await expect(page.getByRole("switch", { name: "Use the local model for all agents" })).toHaveAttribute("aria-checked", "true");
   await page.goto("/");
@@ -664,4 +664,82 @@ test("Status shows usage: plan meters and Gabo's own token log", async ({ page }
   await expect(usage).toContainText("42%");
   await expect(usage).toContainText("Today");
   await expect(usage).toContainText("Last 7 days");
+});
+
+// These change the shared connection, so they run last and leave Gabo connected (fake key) for reruns.
+const CLAUDE_FAKE_KEY = "sk-ant-api03-" + "f".repeat(40);
+
+test("first run: after the intro a pop-up asks to connect an AI; Connect opens the provider's sign-in and a pasted key connects it", async ({ page, context }) => {
+  await page.request.delete("/api/backend");
+  await context.route("https://platform.openai.com/**", (r) => r.fulfill({ contentType: "text/html", body: "<title>OpenAI sign in</title>" }));
+  await page.goto("/");
+  const dialog = page.getByRole("dialog", { name: "Connect your AI" });
+  await expect(dialog).toBeVisible();
+  // Without a connection, runs say how to connect instead of using any login.
+  await dialog.getByRole("button", { name: "Not now" }).click();
+  await expect(dialog).toBeHidden();
+  await page.locator("#prompt-input").fill("hello");
+  await page.keyboard.press("Enter");
+  await expect(page.getByText(/Connect an AI first/)).toBeVisible();
+
+  await page.goto("/connect");
+  await expect(page.getByLabel("Current connection")).toContainText("Not connected");
+  await page.getByRole("radio", { name: /OpenAI/ }).click();
+  const popup = page.waitForEvent("popup");
+  await page.getByRole("button", { name: "Connect", exact: true }).click();
+  expect((await popup).url()).toContain("platform.openai.com/api-keys");
+  await page.getByLabel("OpenAI API key").fill("sk-bad-" + "x".repeat(30));
+  await page.getByRole("button", { name: "Test and connect" }).click();
+  await expect(page.getByRole("alert")).toContainText("rejected the key");
+  await page.getByLabel("OpenAI API key").fill("sk-proj-" + "y".repeat(30));
+  await page.getByRole("button", { name: "Test and connect" }).click();
+  await expect(page.getByText("Connected to OpenAI.")).toBeVisible();
+  await expect(page.getByLabel("Current connection")).toContainText("OpenAI API key");
+  await expect(page.getByRole("radio", { name: /OpenAI/ })).toContainText("key saved");
+
+  await page.goto("/");
+  await expect(page.getByRole("dialog", { name: "Connect your AI" })).toHaveCount(0);
+  await page.locator("#prompt-input").fill("hello again");
+  await page.keyboard.press("Enter");
+  await expect(page.getByText("Done. Fake run finished.")).toBeVisible({ timeout: 20_000 });
+});
+
+test("pop-up: Use Local LLM opens the setup guide; the Local LLM page prepares the model and connects plugins", async ({ page }) => {
+  await page.request.delete("/api/backend");
+  await page.goto("/");
+  await page.getByRole("dialog", { name: "Connect your AI" }).getByRole("button", { name: "Use Local LLM" }).click();
+  await expect(page).toHaveURL(/\/local-llm\?setup=1/);
+  const guide = page.getByRole("region", { name: "Setup guide" });
+  await expect(guide).toHaveAttribute("data-highlight", "true");
+  await expect(guide).toContainText("Install Ollama");
+  await expect(guide).toContainText("qwen3:8b");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+
+  await page.getByLabel("Model", { exact: true }).selectOption("qwen3-coder:30b");
+  await expect(page.getByLabel("Model details")).toContainText("Ollama default");
+  await page.getByRole("button", { name: "Prepare model" }).click();
+  await expect(page.getByText(/Ready: qwen3-coder-30b-gabo-32k/)).toBeVisible();
+  await page.getByRole("button", { name: "Test model" }).click();
+  await expect(page.getByText(/Tools work/)).toBeVisible();
+  const ready = page.getByRole("region", { name: "Readiness" });
+  await expect(ready.locator("li[data-ok=true]")).toHaveCount(5);
+
+  const plugins = page.getByRole("region", { name: "Plugins for Local LLM" });
+  await expect(plugins.getByLabel("github")).toBeChecked();
+  await expect(plugins.getByText("needs a Claude login, not available locally")).toBeVisible();
+  await plugins.getByLabel("Notion token").fill("not-a-token");
+  await plugins.getByRole("button", { name: "Save token" }).click();
+  await expect(plugins.getByRole("alert")).toContainText("Notion integration token");
+  await plugins.getByLabel("Plugin name").fill("Memory");
+  await plugins.getByLabel("Plugin command").fill("npx -y @modelcontextprotocol/server-memory");
+  await plugins.getByRole("button", { name: "Add plugin" }).click();
+  await expect(plugins.getByText("npx -y @modelcontextprotocol/server-memory")).toBeVisible();
+  await plugins.getByRole("listitem").filter({ hasText: "Memory" }).getByRole("button", { name: "Test" }).click();
+  await expect(plugins.getByText(/âœ“ 2 tools: search, fetch/)).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole("region", { name: "Plugins for Local LLM" }).getByText("npx -y @modelcontextprotocol/server-memory")).toBeVisible();
+
+  // Leave Gabo connected for whatever runs next.
+  const res = await page.request.put("/api/backend", { data: { provider: "claude", apiKey: CLAUDE_FAKE_KEY } });
+  expect(res.ok()).toBe(true);
 });

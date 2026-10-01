@@ -1,6 +1,6 @@
 # Gabo — features and commands
 
-Gabo is a local, multi-agent harness for Claude Code. It runs on your Claude Pro/Max login (through the Claude Agent SDK), loads everything your Claude Code CLI loads, and adds a team of role agents and rooms around it.
+Gabo is a local, multi-agent harness for Claude Code. It runs on the AI account you connect (a **Claude**, **OpenAI** or **Gemini** API key) or on a free **Local LLM** in Ollama, loads everything your Claude Code CLI loads, and adds a team of role agents and rooms around it. An install that already had chats before Connect existed keeps using the Claude Code login on that computer.
 
 Start it with `npm run dev`, then open http://127.0.0.1:3217. It only answers on this machine.
 
@@ -17,7 +17,8 @@ Start it with `npm run dev`, then open http://127.0.0.1:3217. It only answers on
 | **Workspace ▸ Arena** `/arena` | Brainstorming and picking the best idea: Emperor (runs the idea-arena with the Idea Rubric), Believer, Skeptic, Investor, Judge, Caveman. The agents spar in an arena. |
 | **Workspace ▸ Hackathon** `/hackathon` | Building and shipping: Planner, Designer, Coder, Tester, Investor, Caveman. The agents type at desks. |
 | **Workspace ▸ Laboratory** `/laboratory` | **You pick the team.** Tick the agents (built-in and your own) to include; the Caveman is always in. Their mascots load above the prompt box, and the chat runs with exactly that team. "Change team" before the first message; **New** starts over. |
-| **Local LLM** `/local-llm` | **Switch to Local LLM**: a step-by-step Ollama guide, live Ollama status, a model picker with **Test model**, a **Pull** box with progress, and a switch. When it's on, every agent and subagent runs on that local model instead of your Claude plan. The status line then shows `local · <model>`. Switch back any time. |
+| **Connect AI** `/connect` | Which account runs Gabo. Pick **Claude**, **OpenAI** or **Gemini**, press **Connect** (opens the provider's sign-in page in a new tab to create an API key), paste the key, and **Test and connect** checks it with the provider before saving. "Models" sets the strong, standard and fast model. **Disconnect** stops runs until you connect again. Keys stay in `.data/backend.json` and are never shown again. |
+| **Local LLM** `/local-llm` | **Switch to Local LLM**. **Setup guide**: install Ollama, download a recommended model (sized to this computer's memory), **Prepare model** (makes a copy with a 16k, 32k or 64k context window so Gabo's prompt isn't cut off), **Test model** (must make a tool call), then flip the switch. **Readiness** shows what's done. **Plugins for Local LLM**: tick which installed Claude Code plugins (GitHub on by default) the local model may use; connect **Notion** (integration token), **Obsidian** (your vault folder) and any MCP server (command or URL), each with **Test**; and pin skills to always offer. While it's on, the model gets a slim prompt (8 tools, only the picked skills, only the ticked plugins) and nothing goes to an AI account. The status line shows `local · <model>`. |
 | **About** `/about` | What Gabo is, where each page goes, and its principles. |
 | **Status** `/status` | **Usage**: your plan meters from Claude Code's `/usage` (5-hour session and week, with reset times, no tokens spent), plan-limit reports from runs, and Gabo's own log (runs and tokens for today and the last 7 days, by room and by model). Also which backend is in use (Claude plan or local model), and Claude Code's version (the one Gabo uses and the CLI on your PATH), the Agent SDK version, default model, models, permission mode, your account and plan, connectivity (Claude Code login, the Anthropic API, Anthropic's status page), every MCP server with its status, your plugins, other AIs, the workspace, and Python for the Arena. **Refresh** re-checks. |
 | **Plugins** `/plugins` | Connect other AIs (ChatGPT, Gemini, OpenClaw, Hermes, or any OpenAI-compatible server) so Claude can consult them. Also lists your Claude Code plugins and MCP servers with their status. |
@@ -29,6 +30,8 @@ Start it with `npm run dev`, then open http://127.0.0.1:3217. It only answers on
 The **sidebar** hides with the sidebar button or **Ctrl+B** and remembers that. On a phone it's a slide-out drawer.
 
 The **intro** shows once per browser session: Gabo pops in, "GABO" types out, then "A Multi-Agent Harness" appears. Click or press any key to skip it.
+
+**First run:** when nothing is connected, a **Connect your AI** pop-up follows the intro. **Connect** signs you in to Claude, OpenAI or Gemini to create a key (as on the Connect AI page); **Use Local LLM** opens the Local LLM setup guide; **Not now** hides it for this session. Until something is connected, sending a message says how to connect. Subscription logins (Claude Pro/Max, ChatGPT Plus, Gemini) can't be offered to other people's apps: Anthropic's Agent SDK terms forbid offering claude.ai login in third-party products, and OpenAI and Google offer subscription login only in their own tools. So people connect with an API key, billed by the provider.
 
 ---
 

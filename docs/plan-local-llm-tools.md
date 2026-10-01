@@ -1,5 +1,9 @@
 # Plan: skills and connectors for the Local LLM (2026-10-01)
 
+> **Status: built (2026-10-01).** Phases 1–5 are in the app; Phase 6 is the Readiness card plus the live checks
+> recorded at the end. Same day: the Connect pop-up and API-key connections (Claude, OpenAI, Gemini). See
+> "What was built" below.
+
 Gab's goal: the Local LLM (Ollama) should use skills and connect to GitHub, Notion, Obsidian and other plugins.
 It must work without Claude's connectors.
 
@@ -115,3 +119,19 @@ went to the Claude plan (must be none).
 | 5 Scout local | small | Stops plan usage in local mode |
 | 4 Connectors | medium | Notion and Obsidian setup, connector switches |
 | 6 Probe | small | Proves each piece |
+
+## What was built
+
+| Plan | In the app |
+| --- | --- |
+| Phase 1 Context | **Prepare model** (`/api/local-llm/prepare` → Ollama `/api/create` with `num_ctx`); the model's window is shown from `ollama show`. |
+| Phase 2 Model | Recommended list sized to this computer's RAM, one-click download; **Test model** must return a tool call. |
+| Phase 3 Slim profile | `buildOptions` with `localSlim`: `tools` = Read, Write, Edit, Glob, Grep, Bash, Skill, WebFetch (+ Agent outside Home), `skills` = picked + pinned, `disallowedTools` = MCP servers not ticked, plus a short "small local model" note. |
+| Phase 4 Connectors | Local LLM page → **Plugins for Local LLM**: Claude Code plugin servers (GitHub on by default; claude.ai connectors greyed out), Notion (`@notionhq/notion-mcp-server`, token), Obsidian (vault folder added to `additionalDirectories` and the path guard), custom MCP servers (command or URL), pinned skills. Each has **Test** (starts it with the MCP SDK and lists its tools). Notion, Obsidian and custom servers work on every backend. |
+| Phase 5 Fully local | Skill scout uses keyword matching when local (`src/harness/skills/keywords.ts`); `askHaiku`, Claude Code info, New Session and the scout all use the active backend's environment. |
+| Phase 6 Proof | **Readiness** card (Ollama, model, context ≥16k, tools, test passed, switched on). |
+
+Also built the same day: **Connect** (`src/harness/backend.ts`, `src/server/backend.ts`): Claude API key (native),
+OpenAI and Gemini keys through Gabo's own Anthropic↔OpenAI translator (`src/harness/translate.ts`,
+`/api/translate/<provider>/v1/messages`, authenticated with a per-start secret).
+

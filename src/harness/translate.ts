@@ -192,6 +192,9 @@ export class StreamTranslator {
 
   constructor(private model: string, private names: ToolNames) {}
 
+  /** Content blocks sent so far (text and tool calls). */
+  get blocks(): number { return this.next; }
+
   private start(): string {
     if (this.started) return "";
     this.started = true;

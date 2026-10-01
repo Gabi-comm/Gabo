@@ -6,7 +6,9 @@ import type { PoolSkill } from "./scout";
 
 const STOP = new Set(("a an and are as at be but by can do for from has have how i in into is it its me my of on or our please so " +
   "that the their them then there these this to us use using was we what when where which who why will with you your make want need help " +
-  "about just like get new one some all any more most also only very").split(" "));
+  "about just like get new one some all any more most also only very" +
+  // Generic task verbs and nouns: they appear in almost every request and say nothing about the skill needed.
+  " read write tell show look find think explain give check run open file files thing things word words text answer question").split(" "));
 
 export function words(text: string): string[] {
   return (text.toLowerCase().match(/[a-z0-9][a-z0-9+#.-]*/g) ?? [])
@@ -21,7 +23,8 @@ export function scoreSkill(task: string[], skill: Pick<PoolSkill, "name" | "desc
   let score = 0;
   const hits = new Set<string>();
   for (const w of new Set(task)) {
-    const near = (x: string) => x === w || (w.length >= 4 && (x.startsWith(w) || w.startsWith(x)) && x.length >= 4);
+    // Same word, or a close form of it (design ~ designs, deploy ~ deploying); short words must match exactly.
+    const near = (x: string) => x === w || (Math.min(x.length, w.length) >= 5 && (x.startsWith(w) || w.startsWith(x)) && Math.abs(x.length - w.length) <= 3);
     if ([...name].some(near)) { score += 3; hits.add(w); }
     else if (desc.some(near)) { score += 1; hits.add(w); }
   }

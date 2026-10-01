@@ -98,5 +98,7 @@ describe("offline skill scout", () => {
     expect(lines[0].why).toMatch(/matches/);
     expect(keywordScout("what's the capital of France", ["tutor"], pool)[0].skills).toEqual([]);
     expect(keywordScout("set up the supabase database", ["coder"], pool)[0].skills).toEqual([]);
+    const principles = [{ name: "principle-minimize-reader-load", description: "Write for the reader.", installed: true }, { name: "principle-foundational-thinking", description: "Think from first principles.", installed: true }];
+    expect(keywordScout("Read the file note.txt and tell me the secret word. /no_think", ["caveman"], principles)[0].skills).toEqual([]);
   });
 });
