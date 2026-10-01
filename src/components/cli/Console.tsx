@@ -363,6 +363,7 @@ function ItemView({ item, meta, onAnswer, onSkills, onRedo }: { item: Item; meta
           <span className={styles.dot} data-status={item.status} aria-hidden="true">●</span>
           <div className={styles.body}>
             <span className={styles.toolName}>{item.summary}</span>
+            {item.status === "running" && item.elapsed ? <span className={styles.via}> · {item.elapsed}s</span> : null}
             {item.agent && <span className={styles.via}> · {meta(item.agent).name}</span>}
             {item.status === "running" && <span className={styles.via}> running…</span>}
             {item.status === "stopped" && <span className={styles.via}> stopped</span>}
@@ -407,6 +408,15 @@ function ItemView({ item, meta, onAnswer, onSkills, onRedo }: { item: Item; meta
       );
     case "notice":
       return <pre className={styles.notice}>{item.text}</pre>;
+    case "thinking":
+      return (
+        <details className={styles.thinking}>
+          <summary>{item.agent ? `${meta(item.agent).name} is thinking` : "Thinking"} <span className={styles.via}>({item.text.length.toLocaleString()} chars)</span></summary>
+          <pre>{item.text}</pre>
+        </details>
+      );
+    case "activity":
+      return <div className={styles.activity}>{item.agent ? `${meta(item.agent).name} · ` : ""}{item.text}</div>;
     case "tier":
       return (
         <div className={styles.tierNote}>

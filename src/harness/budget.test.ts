@@ -135,7 +135,7 @@ describe("cache-friendly prompts and trimmed hand-offs", () => {
   it("puts the per-chat skill list last in an agent's prompt", () => {
     const o = buildOptions({ room: "library", workspace: path.resolve("/w"), spec, skillsByAgent: { tutor: ["unslop"] } });
     const p = o.agents!.tutor.prompt;
-    expect(p.trim().endsWith("Load one with the Skill tool only when the task needs it.")).toBe(true);
+    expect(p.trim().endsWith("load any other installed skill from the Skill tool's list that fits your part.")).toBe(true);
     expect(p.indexOf("Output budget")).toBeLessThan(p.indexOf("Skills picked for you"));
   });
   it("hands the next agent key points, not whole outputs", () => {

@@ -53,7 +53,7 @@ describe("prompts with overrides", () => {
     expect(p).toContain("Kill ideas politely.");
     expect(p).not.toContain(spec.agents.skeptic);
     expect(p).toContain("Gab's added goal for you: Always name a free competitor.");
-    expect(p).toContain("No extra skills were picked");
+    expect(p).toContain("load it with the Skill tool from its list first");
   });
 
   it("a goal alone keeps the spec role text", () => {

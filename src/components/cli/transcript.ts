@@ -6,12 +6,14 @@ export type Status = "running" | "ok" | "error" | "stopped";
 export type Item =
   | { kind: "user"; text: string; images?: number }
   | { kind: "text"; agent: AgentKey | null; text: string }
-  | { kind: "tool"; id: string; summary: string; agent: AgentKey | null; status: Status; preview?: string; lines?: number; diff?: Diff }
+  | { kind: "tool"; id: string; summary: string; agent: AgentKey | null; status: Status; preview?: string; lines?: number; diff?: Diff; elapsed?: number }
   | { kind: "agent"; agent: AgentKey; toolUseId: string; description: string; status: Status; progress?: string; from?: AgentKey[] }
   | { kind: "permission"; requestId: string; tool: string; summary: string; decision?: Decision; ask?: AskKind; questions?: Question[]; plan?: string; answers?: Record<string, string> }
   | { kind: "skills"; lines: SkillLine[]; missing: SkillRec[]; note?: string; installed?: string[]; dismissed?: boolean }
   | { kind: "error"; message: string; hint?: string }
   | { kind: "notice"; text: string }
+  | { kind: "thinking"; agent: AgentKey | null; text: string }
+  | { kind: "activity"; agent: AgentKey | null; text: string }
   | { kind: "tier"; tier: "quick" | "standard" | "deep"; reason: string; prompt: string }
   /** What a compacted chat carries over (/compact summary). */
   | { kind: "summary"; from?: string; text: string };
@@ -67,6 +69,17 @@ export function reduce(t: Transcript, a: Action): Transcript {
       return { ...t, running: true, items: [...t.items, { kind: "user", text: a.text, ...(a.images ? { images: a.images } : {}) }] };
     case "notice":
       return { ...t, items: [...t.items, { kind: "notice", text: a.text }] };
+    case "thinking": {
+      const last = t.items.at(-1);
+      if (last?.kind === "thinking" && last.agent === a.agent) {
+        return { ...t, items: [...t.items.slice(0, -1), { ...last, text: last.text + a.delta }] };
+      }
+      return { ...t, items: [...t.items, { kind: "thinking", agent: a.agent, text: a.delta }] };
+    }
+    case "activity":
+      return { ...t, items: [...t.items, { kind: "activity", agent: a.agent, text: a.text }] };
+    case "tool_progress":
+      return { ...t, items: patchLast(t.items, "tool", (i) => i.id === a.id, { elapsed: a.seconds }) };
     case "background":
       return { ...t, background: a.tasks };
     case "tier":

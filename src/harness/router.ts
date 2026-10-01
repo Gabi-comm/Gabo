@@ -86,6 +86,7 @@ export function tierRules(deepTeamwork: string): string {
     `[Tier: Quick]: do not call any agent. Answer as the team in one reply: pick the 2 members of this room whose roles fit best and ${common} Keep each turn under 120 words.`,
     `[Tier: Standard]: answer as the team in one reply: pick the 2 or 3 members whose roles fit and ${common} Keep each turn under 150 words. Only when a member's part truly needs tools (searching the web, reading or editing files, running commands), call that one member as a real agent with a short Hand-off brief instead of writing its turn, then continue. At most one real agent.`,
     `[Tier: Deep] or no tag: ${deepTeamwork}`,
+    "In every tier, when a member's part needs a skill (writing, design, a framework, a workflow), load it with the Skill tool first.",
     "Never mention the tag in your reply.",
   ].join(" ");
 }

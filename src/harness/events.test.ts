@@ -54,3 +54,26 @@ describe("background agents", () => {
     ]);
   });
 });
+
+describe("every move: activity events", () => {
+  it("maps thinking, tool progress, agent progress, retries, hooks and blocked tools", () => {
+    const map = createMapper(() => true);
+    map({ type: "assistant", parent_tool_use_id: null, message: { content: [{ type: "tool_use", id: "a1", name: "Agent", input: { subagent_type: "coder", description: "fix" } }] } } as never);
+    expect(map({ type: "stream_event", parent_tool_use_id: "a1", event: { type: "content_block_delta", delta: { type: "thinking_delta", thinking: "Check the null case" } } } as never))
+      .toEqual([{ type: "thinking", delta: "Check the null case", agent: "coder" }]);
+    expect(map({ type: "tool_progress", tool_use_id: "b7", tool_name: "Bash", parent_tool_use_id: null, elapsed_time_seconds: 41.6 } as never))
+      .toEqual([{ type: "tool_progress", id: "b7", seconds: 42 }]);
+    expect(map({ type: "system", subtype: "task_progress", tool_use_id: "a1", task_id: "k", description: "fix", last_tool_name: "Edit", usage: { total_tokens: 12400, tool_uses: 5, duration_ms: 40000 } } as never))
+      .toEqual([{ type: "agent_progress", agent: "coder", summary: "using Edit · 5 tools · 12.4k tokens · 40s" }]);
+    expect(map({ type: "system", subtype: "api_retry", attempt: 2, max_retries: 10, retry_delay_ms: 3000, error_status: 529 } as never)[0])
+      .toMatchObject({ type: "notice", text: "Retrying the API (attempt 2 of 10, in 3s, error 529)." });
+    expect(map({ type: "system", subtype: "hook_started", hook_event: "SessionStart", hook_name: "remember" } as never)).toEqual([{ type: "activity", text: "hook SessionStart: remember", agent: null }]);
+    expect(map({ type: "system", subtype: "hook_started", hook_event: "PreToolUse", hook_name: "x" } as never)).toEqual([]);
+    expect(map({ type: "system", subtype: "permission_denied", tool_name: "Bash", tool_use_id: "z", message: "outside the workspace" } as never)[0])
+      .toMatchObject({ text: "Blocked: Bash: outside the workspace" });
+  });
+  it("shows a finished thinking block once when it wasn't streamed", () => {
+    const out = createMapper()({ type: "assistant", parent_tool_use_id: null, message: { content: [{ type: "thinking", thinking: "plan it" }, { type: "text", text: "Done" }] } } as never);
+    expect(out).toEqual([{ type: "thinking", delta: "plan it", agent: null }, { type: "text", delta: "Done", agent: null }]);
+  });
+});

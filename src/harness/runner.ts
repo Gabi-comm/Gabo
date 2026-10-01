@@ -40,9 +40,10 @@ function agentPrompt(id: AgentKey, spec: ParsedSpec, overrides: Overrides, custo
   parts.push(`Output budget: at most ${words} words, in the sections your role asks for. The lead hands your key points to the next agent, so don't restate the task or repeat what others said.`);
   if (teamRoom) parts.push(TEAMMATE);
   // The server-side scout already applied the spec's skill rule; agents only get the result (no repo browsing).
+  // Agents can load any installed skill (verified live): the picks are a head start, not a limit.
   parts.push(skills.length
-    ? `Skills picked for you: ${skills.join(", ")}. Load one with the Skill tool only when the task needs it.`
-    : "No extra skills were picked for this task.");
+    ? `Skills picked for you: ${skills.join(", ")}. Load one with the Skill tool when your part needs it, and load any other installed skill from the Skill tool's list that fits your part.`
+    : "Use skills: when your part needs one (writing, design, a framework, a workflow), load it with the Skill tool from its list first.");
   return parts.join("\n\n");
 }
 

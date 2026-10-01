@@ -25,6 +25,12 @@ export type UiEvent =
   | { type: "result"; ok: boolean; costUsd: number; inputTokens: number; outputTokens: number; durationMs: number; tokens?: TokenCounts; turnTokens?: TokenCounts; contextTokens?: number }
   | { type: "error"; message: string; hint?: string }
   | { type: "notice"; text: string }
+  /** The model's thinking as it streams (lead or an agent). */
+  | { type: "thinking"; delta: string; agent: AgentKey | null }
+  /** A small step worth showing: a hook running, a memory recall, a tool summary. */
+  | { type: "activity"; text: string; agent: AgentKey | null }
+  /** A long-running tool is still going. */
+  | { type: "tool_progress"; id: string; seconds: number }
   /** Background work still running (agents the lead sent off while it ended its turn). Replace semantics. */
   | { type: "background"; tasks: { id: string; description: string }[] }
   /** The router's pick for this message, with the prompt so the UI can redo it with real agents. */
@@ -34,6 +40,9 @@ export type UiEvent =
   | { type: "done" };
 
 type Block = { type: string; [k: string]: unknown };
+
+/** Hooks that fire on every tool call: showing them would flood the chat. */
+const NOISY_HOOKS = new Set(["PreToolUse", "PostToolUse", "PostToolUseFailure", "PermissionRequest"]);
 
 export interface TokenCounts { input: number; output: number; cacheRead: number; cacheWrite: number; costUsd: number }
 
@@ -98,6 +107,7 @@ function resultText(content: unknown): string {
 export function createMapper(known: (id: unknown) => boolean = isAgentId) {
   const subagentByToolUse = new Map<string, AgentKey>();
   const streamedFor = new Set<string>();
+  const thoughtFor = new Set<string>();
   // Prompt size of the lead's latest model call: the chat's context, re-read on every message.
   let contextTokens = 0;
   // Agents running in the background: their Agent call returned at once, they finish with a task_notification.
@@ -146,17 +156,57 @@ export function createMapper(known: (id: unknown) => boolean = isAgentId) {
             { type: "notice", text: `${agent} ${status === "completed" ? "finished" : status} in the background${summary ? `: ${summary}` : "."}` },
           ];
         }
-        if (msg.subtype === "task_progress" && typeof msg.summary === "string") {
+        if (msg.subtype === "task_progress") {
           const agent = subagentByToolUse.get(String(msg.tool_use_id));
-          return agent ? [{ type: "agent_progress", agent, summary: msg.summary }] : [];
+          if (!agent) return [];
+          const u = (msg.usage ?? {}) as { total_tokens?: number; tool_uses?: number; duration_ms?: number };
+          const facts = [
+            typeof msg.last_tool_name === "string" && msg.last_tool_name ? `using ${msg.last_tool_name}` : "",
+            u.tool_uses ? `${u.tool_uses} tool${u.tool_uses === 1 ? "" : "s"}` : "",
+            u.total_tokens ? `${u.total_tokens >= 1000 ? `${(u.total_tokens / 1000).toFixed(1)}k` : u.total_tokens} tokens` : "",
+            u.duration_ms ? `${Math.round(u.duration_ms / 1000)}s` : "",
+          ].filter(Boolean).join(" · ");
+          const summary = typeof msg.summary === "string" && msg.summary ? `${msg.summary}${facts ? ` (${facts})` : ""}` : facts;
+          return summary ? [{ type: "agent_progress", agent, summary }] : [];
+        }
+        if (msg.subtype === "api_retry") {
+          const secs = Math.round(Number(msg.retry_delay_ms ?? 0) / 1000);
+          const why = msg.error_status ? `error ${msg.error_status}` : "no response";
+          return [{ type: "notice", text: `Retrying the API (attempt ${msg.attempt} of ${msg.max_retries}, in ${secs}s, ${why}).` }];
+        }
+        if (msg.subtype === "hook_started" && !NOISY_HOOKS.has(String(msg.hook_event))) {
+          return [{ type: "activity", text: `hook ${msg.hook_event}: ${msg.hook_name}`, agent: null }];
+        }
+        if (msg.subtype === "hook_response" && typeof msg.exit_code === "number" && msg.exit_code !== 0) {
+          const err = String(msg.stderr || msg.output || "").trim().split("\n")[0].slice(0, 160);
+          return [{ type: "activity", text: `hook ${msg.hook_event}: ${msg.hook_name} failed${err ? `: ${err}` : ""}`, agent: null }];
+        }
+        if (msg.subtype === "status") {
+          if (msg.status === "compacting") return [{ type: "notice", text: "Compacting the conversation…" }];
+          if (msg.compact_result === "failed") return [{ type: "notice", text: `Compacting failed${msg.compact_error ? `: ${msg.compact_error}` : "."}` }];
+        }
+        if (msg.subtype === "notification" && typeof msg.text === "string") return [{ type: "notice", text: msg.text }];
+        if (msg.subtype === "informational" && typeof msg.content === "string") return [{ type: "notice", text: msg.content }];
+        if (msg.subtype === "permission_denied") {
+          return [{ type: "notice", text: `Blocked: ${msg.tool_name}${msg.message ? `: ${String(msg.message).slice(0, 200)}` : ""}` }];
+        }
+        if (msg.subtype === "model_refusal_fallback") {
+          return [{ type: "notice", text: `The model declined, so ${msg.fallback_model} answered instead of ${msg.original_model}.` }];
+        }
+        if (msg.subtype === "memory_recall" && Array.isArray(msg.memories)) {
+          return [{ type: "activity", text: `recalled ${msg.memories.length} memor${msg.memories.length === 1 ? "y" : "ies"}`, agent: null }];
         }
         return [];
       }
       case "stream_event": {
-        const ev = msg.event as { type?: string; delta?: { type?: string; text?: string } };
+        const ev = msg.event as { type?: string; delta?: { type?: string; text?: string; thinking?: string } };
         if (ev?.type === "content_block_delta" && ev.delta?.type === "text_delta" && ev.delta.text) {
           streamedFor.add(key(msg.parent_tool_use_id));
           return [{ type: "text", delta: ev.delta.text, agent: agentOf(msg.parent_tool_use_id) }];
+        }
+        if (ev?.type === "content_block_delta" && ev.delta?.type === "thinking_delta" && ev.delta.thinking) {
+          thoughtFor.add(key(msg.parent_tool_use_id));
+          return [{ type: "thinking", delta: ev.delta.thinking, agent: agentOf(msg.parent_tool_use_id) }];
         }
         return [];
       }
@@ -169,10 +219,13 @@ export function createMapper(known: (id: unknown) => boolean = isAgentId) {
         }
         const k = key(msg.parent_tool_use_id);
         const streamed = streamedFor.delete(k);
+        const thoughtStreamed = thoughtFor.delete(k);
         const agent = agentOf(msg.parent_tool_use_id);
         const blocks = ((msg.message as { content?: Block[] })?.content ?? []) as Block[];
         for (const b of blocks) {
-          if (b.type === "text" && !streamed && b.text) {
+          if (b.type === "thinking" && !thoughtStreamed && typeof b.thinking === "string" && b.thinking.trim()) {
+            out.push({ type: "thinking", delta: String(b.thinking), agent });
+          } else if (b.type === "text" && !streamed && b.text) {
             out.push({ type: "text", delta: String(b.text), agent });
           } else if (b.type === "tool_use") {
             const id = String(b.id);
@@ -218,6 +271,12 @@ export function createMapper(known: (id: unknown) => boolean = isAgentId) {
           out.push({ type: "tool_result", id, ok, preview, lines: lines.length });
         }
         return out;
+      }
+      case "tool_progress": {
+        return [{ type: "tool_progress", id: String(msg.tool_use_id), seconds: Math.round(Number(msg.elapsed_time_seconds ?? 0)) }];
+      }
+      case "tool_use_summary": {
+        return typeof msg.summary === "string" && msg.summary ? [{ type: "activity", text: `summary: ${msg.summary}`, agent: agentOf(msg.parent_tool_use_id) }] : [];
       }
       case "rate_limit_event": {
         const info = msg.rate_limit_info;
