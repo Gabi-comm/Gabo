@@ -12,22 +12,61 @@ const CODE = /```|\b[\w./-]+\.(ts|tsx|js|jsx|py|go|rs|java|cs|cpp|rb|php|md|json
 const TOOLS = /\b(research|sources?|cite|citations?|latest|news|today'?s|search (the )?(web|online|internet)|web search|look up|find out|compare .{0,40}(tools|libraries|frameworks|products|models)|survey)\b/i;
 const IDEAS = /\b(ideas?|brainstorm|tournament)\b|(^|\s)--(full|quick|agents)\b/i;
 const QUESTION = /^(what|why|how|who|when|where|which|is|are|can|could|does|do|did|should|explain|define|tell me|difference)\b/i;
+/** Things to produce: a request for one of these is more than a quick answer. */
+const DELIVERABLE = /\b(plan|schedule|timetable|roadmap|questions|quiz|quizzes|exercises|problems|flashcards|examples|outline|summary|summaries|essay|report|lesson|study guide|guide|checklist|table|comparison|pros and cons|breakdown|walkthrough|step[- ]by[- ]step|strategy|proposal|pitch|critique|review)\b/i;
+/** Asked-for amounts: "3 practice questions", "five ideas", "a few examples". */
+const QUANTITY = /\b(\d+|two|three|four|five|six|seven|eight|nine|ten|a few|several|some)\s+(?:[a-z-]+\s+){0,2}(questions|examples|ideas|steps|options|problems|exercises|tips|ways|reasons|points|flashcards|alternatives)\b/i;
+/** Several asks in one message. */
+const MULTI = /\b(then|and then|after that|also|as well as|plus|finally|next)\b|;|\n\s*(?:[-*•]|\d+[.)])\s/gi;
+
+/** A room's learned lean, from Gab's corrections: positive = he wanted more team, negative = less. */
+export type RouterBias = number;
+
+export interface Score { total: number; parts: string[] }
+
+/**
+ * Complexity score (no model call). Each signal adds points; plain short questions subtract. Build and code work,
+ * idea tournaments and very long tasks go straight to Deep before scoring.
+ */
+export function scorePrompt(prompt: string, images = 0, bias: RouterBias = 0): Score {
+  const parts: string[] = [];
+  let total = 0;
+  const add = (n: number, why: string) => { total += n; parts.push(why); };
+  add(Math.min(prompt.length / 250, 2.5), "length");
+  if (DELIVERABLE.test(prompt)) add(2, "asks for something to produce");
+  if (QUANTITY.test(prompt)) add(1.5, "asks for several items");
+  const asks = (prompt.match(MULTI) ?? []).length;
+  if (asks) add(Math.min(asks * 1.5, 3), asks > 1 ? "several steps" : "more than one step");
+  if (TOOLS.test(prompt)) add(1.5, "needs to look things up");
+  if (images) add(1, "has images");
+  if ((QUESTION.test(prompt) || prompt.endsWith("?")) && prompt.length <= 200 && asks === 0) add(-1.5, "short question");
+  if (bias) add(bias, bias > 0 ? "you often wanted more team here" : "you often wanted less team here");
+  return { total: Math.round(total * 10) / 10, parts };
+}
+
+/** Score thresholds: below STANDARD is Quick, from DEEP up is Deep. */
+export const THRESHOLDS = { standard: 1.2, deep: 6 };
 
 /** Decides the tier. `--deep` / `--lite` in the prompt force it (and are removed). */
-export function routePrompt(raw: string, room: RoomId, images = 0): Route {
+export function routePrompt(raw: string, room: RoomId, images = 0, bias: RouterBias = 0): Route {
   let prompt = raw;
   if (/(^|\s)--deep\b/i.test(prompt)) return { tier: "deep", reason: "you asked for --deep", prompt: strip(prompt, "deep") };
   if (/(^|\s)--lite\b/i.test(prompt)) return { tier: "quick", reason: "you asked for --lite", prompt: strip(prompt, "lite") };
   prompt = prompt.trim();
-  const build = BUILD.test(prompt) || CODE.test(prompt);
   if (room === "arena" && IDEAS.test(prompt)) return { tier: "deep", reason: "idea tournament", prompt };
-  if (build) return { tier: "deep", reason: "build or code work", prompt };
+  if (BUILD.test(prompt) || CODE.test(prompt)) return { tier: "deep", reason: "build or code work", prompt };
   if (prompt.length > 1200) return { tier: "deep", reason: "long, detailed task", prompt };
-  const needsTools = TOOLS.test(prompt) || images > 0;
-  if (!needsTools && prompt.length <= 200 && (QUESTION.test(prompt) || prompt.endsWith("?"))) {
-    return { tier: "quick", reason: "short question", prompt };
-  }
-  return { tier: "standard", reason: needsTools ? "needs one tool-using agent at most" : "regular task", prompt };
+  const { total, parts } = scorePrompt(prompt, images, bias);
+  const reason = parts.filter((p) => p !== "length").slice(0, 2).join(", ") || (total < THRESHOLDS.standard ? "short and simple" : "regular task");
+  if (total >= THRESHOLDS.deep) return { tier: "deep", reason, prompt };
+  if (total >= THRESHOLDS.standard) return { tier: "standard", reason, prompt };
+  return { tier: "quick", reason, prompt };
+}
+
+/** A room's lean from Gab's corrections: each --deep (or "Redo with real agents") +0.5, each --lite -0.5, capped. */
+export function biasFrom(counts: { deep?: number; lite?: number } | undefined): RouterBias {
+  if (!counts) return 0;
+  return Math.max(-2, Math.min(2, ((counts.deep ?? 0) - (counts.lite ?? 0)) * 0.5));
 }
 
 const strip = (p: string, flag: string) => p.replace(new RegExp(`(^|\\s)--${flag}\\b`, "gi"), " ").replace(/\s+/g, " ").trim();
